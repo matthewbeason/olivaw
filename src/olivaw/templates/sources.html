@@ -12,6 +12,11 @@
           <dt>ID</dt><dd>{{ source.source_id }}</dd>
           <dt>Status</dt><dd>{{ source.message }}</dd>
         </dl>
+        {% for payload in report.data %}
+          {% if payload["source"] == source.source_id and "count" in payload %}
+            <p>File count: {{ payload["count"] }}</p>
+          {% endif %}
+        {% endfor %}
       </div>
     {% endfor %}
   </section>
@@ -22,10 +27,17 @@
       <dl>
         <dt>Source</dt><dd>{{ payload["source"] }}</dd>
         <dt>Status</dt><dd>{{ payload["status"] }}</dd>
+        {% if "count" in payload %}
+          <dt>Count</dt><dd>{{ payload["count"] }}</dd>
+        {% endif %}
       </dl>
       <ul>
         {% for item in payload["items"] %}
-          <li><strong>{{ item.title }}</strong>: {{ item.summary }}</li>
+          <li>
+            <strong>{{ item.title }}</strong>
+            {% if item.path %}<span>({{ item.path }})</span>{% endif %}
+            <p>{{ item.summary or item.preview }}</p>
+          </li>
         {% endfor %}
       </ul>
     </div>

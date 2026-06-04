@@ -85,13 +85,54 @@ def test_cli_web_accepts_host_and_port(monkeypatch, args, expected):
 
 
 def test_cli_sources_outputs_registered_sources(capsys):
+    # Uses repository/user defaults; only asserts source registration shape.
     exit_code = main(["sources"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "Olivaw Sources" in captured.out
     assert "Manual example source (manual): ok" in captured.out
-    assert "Example item: Demonstrates source plumbing." in captured.out
+    assert "Local files (files):" in captured.out
+
+
+def test_cli_init_config_creates_config_once(monkeypatch, tmp_path, capsys):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = (
+        tmp_path / "Library" / "Application Support" / "Olivaw" / "config.toml"
+    )
+
+    assert main(["init-config"]) == 0
+    first = capsys.readouterr()
+    assert f"Created: {config_path}" in first.out
+    assert config_path.exists()
+    assert "openai_api_key = \"\"" in config_path.read_text(encoding="utf-8")
+
+    config_path.write_text("sentinel", encoding="utf-8")
+    assert main(["init-config"]) == 0
+    second = capsys.readouterr()
+    assert f"Configuration already exists: {config_path}" in second.out
+    assert config_path.read_text(encoding="utf-8") == "sentinel"
+
+
+def test_cli_init_data_creates_data_tree_once(monkeypatch, tmp_path, capsys):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_path = tmp_path / "Library" / "Application Support" / "Olivaw" / "data"
+
+    assert main(["init-data"]) == 0
+    first = capsys.readouterr()
+    assert f"Created: {data_path}" in first.out
+    assert (data_path / "notes" / "welcome.md").exists()
+    assert (data_path / "reports" / "example.json").exists()
+    assert (data_path / "status" / "system.txt").exists()
+
+    sentinel = data_path / "status" / "system.txt"
+    sentinel.write_text("sentinel", encoding="utf-8")
+    assert main(["init-data"]) == 0
+    second = capsys.readouterr()
+    assert f"Data directory already exists: {data_path}" in second.out
+    assert sentinel.read_text(encoding="utf-8") == "sentinel"
 
 
 def test_cli_config_outputs_redacted_user_config(monkeypatch, tmp_path, capsys):

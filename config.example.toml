@@ -11,6 +11,10 @@ model = "gpt-4.1-mini"
 [policy]
 cloud_fallback = "disabled"
 
+[sources.files]
+directory = "~/Library/Application Support/Olivaw/data"
+max_bytes = 1048576
+
 [secrets]
 # Replace with a real key in your user config file only:
 # ~/Library/Application Support/Olivaw/config.toml

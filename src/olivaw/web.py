@@ -69,7 +69,7 @@ def capabilities_page(request: Request):
 
 @app.get("/sources", response_class=HTMLResponse)
 def sources_page(request: Request):
-    report = SourceInspectionCapability().run()
+    report = SourceInspectionCapability().run(config=load_config())
     return templates.TemplateResponse(request, "sources.html", {"report": report})
 
 

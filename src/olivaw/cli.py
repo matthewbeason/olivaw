@@ -30,6 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("prompt", nargs="?", default="Hello from Olivaw.")
 
     subparsers.add_parser("sources", help="Inspect registered knowledge sources.")
+    subparsers.add_parser("init-config", help="Create the user config file if missing.")
+    subparsers.add_parser("init-data", help="Create the user data directory if missing.")
 
     web = subparsers.add_parser("web", help="Start the local web application.")
     web.add_argument("--host", default="127.0.0.1")
@@ -65,6 +67,22 @@ def main(argv: list[str] | None = None) -> int:
             )
 
             print(format_sources_report(SourceInspectionCapability().run()))
+            return 0
+
+        if args.command == "init-config":
+            from olivaw.bootstrap import init_config
+
+            result = init_config()
+            action = "Created" if result.created else "Configuration already exists"
+            print(f"{action}: {result.path}")
+            return 0
+
+        if args.command == "init-data":
+            from olivaw.bootstrap import init_data
+
+            result = init_data()
+            action = "Created" if result.created else "Data directory already exists"
+            print(f"{action}: {result.path}")
             return 0
 
         if args.command == "web":

@@ -37,6 +37,7 @@ Today, Olivaw should describe only these implemented capabilities:
 - Lightweight web interface
 - Read-only configuration display
 - Source inspection
+- File inspection
 
 These roadmap capabilities are not implemented yet:
 
@@ -48,9 +49,10 @@ These roadmap capabilities are not implemented yet:
 - Local business lookup
 - Prime Observer integration
 - Core Signal integration
-- Prime Observer source
-- Core Signal source
-- File source
+- PrimeObserverSource
+- CoreSignalSource
+- Source aggregation
+- Briefing from sources
 - Autonomous background tasks
 - Tool execution
 - Desktop automation
@@ -107,10 +109,10 @@ Environment variables always win. This lets terminal sessions override settings
 temporarily while the LaunchAgent and terminal both share the same persistent
 user config file by default.
 
-Create the user config directory:
+Create the user config file from the checked-in template:
 
 ```bash
-mkdir -p "$HOME/Library/Application Support/Olivaw"
+olivaw init-config
 ```
 
 Example `~/Library/Application Support/Olivaw/config.toml`:
@@ -128,6 +130,10 @@ model = "gpt-4.1-mini"
 
 [policy]
 cloud_fallback = "disabled"
+
+[sources.files]
+directory = "~/Library/Application Support/Olivaw/data"
+max_bytes = 1048576
 
 [secrets]
 openai_api_key = ""
@@ -170,6 +176,8 @@ olivaw brief --input examples/daily_context.json
 olivaw chat
 olivaw sources
 olivaw config
+olivaw init-config
+olivaw init-data
 olivaw web
 ```
 
@@ -205,13 +213,14 @@ Olivaw has a lightweight Sources framework so integrations can expose structured
 information before the project adds memory. A source has an id, display name,
 health status, and `fetch()` method.
 
-v0 includes one deterministic local source:
+v0 includes two local sources:
 
 ```bash
+olivaw init-data
 olivaw sources
 ```
 
-The manual source returns:
+The manual source returns deterministic fixture data:
 
 ```json
 {
@@ -226,8 +235,28 @@ The manual source returns:
 }
 ```
 
-Prime Observer, Core Signal, and file-backed sources are roadmap items only.
-They are not integrated yet.
+The file source reads structured local files from:
+
+```text
+~/Library/Application Support/Olivaw/data/
+```
+
+`olivaw init-data` creates:
+
+```text
+data/
+  notes/
+  reports/
+  status/
+```
+
+FileSource is read-only. It does not index, embed, store memory, or use a vector
+database. It inspects `.txt`, `.md`, and `.json` files, ignores hidden files,
+ignores unsupported/binary file types, and skips files larger than the configured
+limit, which defaults to 1 MB.
+
+PrimeObserverSource, CoreSignalSource, source aggregation, and briefing from
+sources are roadmap items only. They are not integrated yet.
 
 ## macOS LaunchAgent
 

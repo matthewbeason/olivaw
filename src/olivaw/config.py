@@ -49,10 +49,17 @@ class PolicyConfig:
 
 
 @dataclass(frozen=True)
+class FileSourceConfig:
+    directory: Path = field(default_factory=lambda: default_user_data_path())
+    max_bytes: int = 1_048_576
+
+
+@dataclass(frozen=True)
 class OlivawConfig:
     local: LocalProviderConfig = field(default_factory=LocalProviderConfig)
     cloud: CloudProviderConfig = field(default_factory=CloudProviderConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    files: FileSourceConfig = field(default_factory=FileSourceConfig)
     config_path: Path | None = None
     config_file_exists: bool = False
 
@@ -67,6 +74,8 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
     cloud_data = providers.get("cloud", {})
     policy_data = data.get("policy", {})
     secrets_data = data.get("secrets", {})
+    sources_data = data.get("sources", {})
+    files_data = sources_data.get("files", {})
 
     local = LocalProviderConfig(
         type=str(local_data.get("type", "ollama")),
@@ -104,10 +113,23 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         )
     )
 
+    files = FileSourceConfig(
+        directory=Path(
+            os.getenv(
+                "OLIVAW_FILES_DIR",
+                files_data.get("directory", default_user_data_path()),
+            )
+        ).expanduser(),
+        max_bytes=int(
+            os.getenv("OLIVAW_FILES_MAX_BYTES", files_data.get("max_bytes", 1_048_576))
+        ),
+    )
+
     return OlivawConfig(
         local=local,
         cloud=cloud,
         policy=policy,
+        files=files,
         config_path=config_path,
         config_file_exists=config_file_exists,
     )
@@ -127,6 +149,12 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "api_key_present": config.cloud.api_key_present,
         },
         "policy": {"cloud_fallback": config.policy.cloud_fallback},
+        "sources": {
+            "files": {
+                "directory": str(config.files.directory),
+                "max_bytes": config.files.max_bytes,
+            }
+        },
         "config_path": str(config.config_path) if config.config_path else None,
         "config_file_exists": config.config_file_exists,
     }
@@ -157,6 +185,10 @@ def format_config_report(config: OlivawConfig) -> str:
             "",
             "Policy:",
             f"- Cloud fallback: {config.policy.cloud_fallback}",
+            "",
+            "Sources:",
+            f"- Files directory: {config.files.directory}",
+            f"- Files max bytes: {config.files.max_bytes}",
         ]
     )
 
@@ -198,6 +230,10 @@ def _read_toml(path: Path) -> dict[str, object]:
 
 def default_user_config_path() -> Path:
     return Path.home() / "Library" / "Application Support" / "Olivaw" / "config.toml"
+
+
+def default_user_data_path() -> Path:
+    return Path.home() / "Library" / "Application Support" / "Olivaw" / "data"
 
 
 def _first_present(*values: object) -> str | None:

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from olivaw.config import OlivawConfig, load_config
 from olivaw.sources.base import Source, SourceHealth, SourcePayload
+from olivaw.sources.file_source import FileSource
 from olivaw.sources.manual import ManualSource
 
 
@@ -28,16 +30,25 @@ class SourceRegistry:
         return tuple(source.fetch() for source in self.list_sources())
 
 
-def create_default_registry() -> SourceRegistry:
+def create_default_registry(config: OlivawConfig | None = None) -> SourceRegistry:
+    resolved_config = config or load_config()
     registry = SourceRegistry()
     registry.register(ManualSource())
+    registry.register(
+        FileSource(
+            root=resolved_config.files.directory,
+            max_bytes=resolved_config.files.max_bytes,
+        )
+    )
     return registry
 
 
-def inspect_sources(registry: SourceRegistry | None = None) -> dict[str, object]:
-    resolved = registry or create_default_registry()
+def inspect_sources(
+    registry: SourceRegistry | None = None,
+    config: OlivawConfig | None = None,
+) -> dict[str, object]:
+    resolved = registry or create_default_registry(config)
     return {
         "sources": [asdict(status) for status in resolved.health_all()],
         "data": list(resolved.fetch_all()),
     }
-
