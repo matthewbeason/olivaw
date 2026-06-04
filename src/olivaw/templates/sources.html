@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Sources</h1>
+  <p>Registered structured knowledge sources available to Olivaw.</p>
+
+  <section class="grid">
+    {% for source in report.sources %}
+      <div class="card">
+        <h2>{{ source.display_name }}</h2>
+        <p class="status {{ source.status }}">{{ source.status }}</p>
+        <dl>
+          <dt>ID</dt><dd>{{ source.source_id }}</dd>
+          <dt>Status</dt><dd>{{ source.message }}</dd>
+        </dl>
+      </div>
+    {% endfor %}
+  </section>
+
+  <h2>Example Source Output</h2>
+  {% for payload in report.data %}
+    <div class="card">
+      <dl>
+        <dt>Source</dt><dd>{{ payload["source"] }}</dd>
+        <dt>Status</dt><dd>{{ payload["status"] }}</dd>
+      </dl>
+      <ul>
+        {% for item in payload["items"] %}
+          <li><strong>{{ item.title }}</strong>: {{ item.summary }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+{% endblock %}

@@ -26,6 +26,7 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "CLI interface",
         "lightweight web interface",
         "read-only configuration display",
+        "source inspection",
     ),
     not_yet_implemented_capabilities=(
         "persistent memory",
@@ -36,6 +37,9 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "local business lookup",
         "Prime Observer integration",
         "Core Signal integration",
+        "Prime Observer source",
+        "Core Signal source",
+        "File source",
         "autonomous background tasks",
         "tool execution",
         "desktop automation",
@@ -65,4 +69,3 @@ def capabilities_summary(identity: AssistantIdentity | None = None) -> str:
         *[f"- {item}" for item in resolved.not_yet_implemented_capabilities],
     ]
     return "\n".join(lines)
-

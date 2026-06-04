@@ -76,6 +76,17 @@ def test_capabilities_route_renders_identity_grounding():
     assert "weather lookup" in response.text
 
 
+def test_sources_route_renders_registered_sources():
+    response = client.get("/sources")
+
+    assert response.status_code == 200
+    assert "Sources" in response.text
+    assert "Manual example source" in response.text
+    assert "manual" in response.text
+    assert "Example item" in response.text
+    assert "Demonstrates source plumbing." in response.text
+
+
 def test_chat_post_renders_chat_response(monkeypatch):
     def fake_run(self, prompt, config=None):
         assert prompt == "hello"

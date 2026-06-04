@@ -27,10 +27,11 @@ def create_default_assistant() -> Assistant:
     from olivaw.capabilities.briefing import BriefingCapability
     from olivaw.capabilities.chat import ChatCapability
     from olivaw.capabilities.health import HealthCapability
+    from olivaw.capabilities.sources import SourceInspectionCapability
 
     assistant = Assistant()
     assistant.register(BriefingCapability())
     assistant.register(ChatCapability())
     assistant.register(HealthCapability())
+    assistant.register(SourceInspectionCapability())
     return assistant
-

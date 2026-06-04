@@ -16,6 +16,7 @@ def test_identity_contains_current_implemented_capabilities():
     assert "provider health reporting" in identity.implemented_capabilities
     assert "local Ollama provider access" in identity.implemented_capabilities
     assert "read-only configuration display" in identity.implemented_capabilities
+    assert "source inspection" in identity.implemented_capabilities
 
 
 def test_identity_contains_not_yet_implemented_capabilities():
@@ -27,6 +28,9 @@ def test_identity_contains_not_yet_implemented_capabilities():
     assert "weather lookup" in identity.not_yet_implemented_capabilities
     assert "Prime Observer integration" in identity.not_yet_implemented_capabilities
     assert "Core Signal integration" in identity.not_yet_implemented_capabilities
+    assert "Prime Observer source" in identity.not_yet_implemented_capabilities
+    assert "Core Signal source" in identity.not_yet_implemented_capabilities
+    assert "File source" in identity.not_yet_implemented_capabilities
     assert "desktop automation" in identity.not_yet_implemented_capabilities
 
 
@@ -35,8 +39,8 @@ def test_capabilities_summary_separates_current_from_roadmap():
     implemented, not_implemented = summary.split("Not implemented yet:")
 
     assert "deterministic briefing generation" in implemented
+    assert "source inspection" in implemented
     assert "calendar integration" not in implemented
     assert "weather lookup" not in implemented
     assert "calendar integration" in not_implemented
     assert "weather lookup" in not_implemented
-

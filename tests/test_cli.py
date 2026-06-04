@@ -68,3 +68,13 @@ def test_cli_web_accepts_host_and_port(monkeypatch, args, expected):
     assert main(args) == 0
     assert captured["host"] == expected["host"]
     assert captured["port"] == expected["port"]
+
+
+def test_cli_sources_outputs_registered_sources(capsys):
+    exit_code = main(["sources"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Olivaw Sources" in captured.out
+    assert "Manual example source (manual): ok" in captured.out
+    assert "Example item: Demonstrates source plumbing." in captured.out

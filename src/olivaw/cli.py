@@ -29,6 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     chat = subparsers.add_parser("chat", help="Run placeholder provider-routed chat.")
     chat.add_argument("prompt", nargs="?", default="Hello from Olivaw.")
 
+    subparsers.add_parser("sources", help="Inspect registered knowledge sources.")
+
     web = subparsers.add_parser("web", help="Start the local web application.")
     web.add_argument("--host", default="127.0.0.1")
     web.add_argument("--port", type=int, default=8765)
@@ -54,6 +56,15 @@ def main(argv: list[str] | None = None) -> int:
             from olivaw.capabilities.chat import ChatCapability
 
             print(ChatCapability().run(args.prompt))
+            return 0
+
+        if args.command == "sources":
+            from olivaw.capabilities.sources import (
+                SourceInspectionCapability,
+                format_sources_report,
+            )
+
+            print(format_sources_report(SourceInspectionCapability().run()))
             return 0
 
         if args.command == "web":

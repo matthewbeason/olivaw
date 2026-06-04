@@ -36,6 +36,7 @@ Today, Olivaw should describe only these implemented capabilities:
 - CLI interface
 - Lightweight web interface
 - Read-only configuration display
+- Source inspection
 
 These roadmap capabilities are not implemented yet:
 
@@ -47,6 +48,9 @@ These roadmap capabilities are not implemented yet:
 - Local business lookup
 - Prime Observer integration
 - Core Signal integration
+- Prime Observer source
+- Core Signal source
+- File source
 - Autonomous background tasks
 - Tool execution
 - Desktop automation
@@ -138,6 +142,7 @@ OLIVAW_CLOUD_FALLBACK=disabled
 olivaw health
 olivaw brief --input examples/daily_context.json
 olivaw chat
+olivaw sources
 olivaw web
 ```
 
@@ -151,6 +156,7 @@ The web UI uses FastAPI and Jinja templates. Routes:
 
 - `/` shows assistant status, selected provider, and an example briefing.
 - `/chat` provides a minimal placeholder chat surface.
+- `/sources` shows registered sources, source status, and example source data.
 - `/capabilities` shows implemented capabilities, roadmap capabilities, and
   operating principles.
 - `/health` shows local/cloud provider and configuration status.
@@ -164,6 +170,36 @@ olivaw web --host 127.0.0.1 --port 8765
 
 Olivaw uses port `8765` instead of `8000` so it does not collide with Prime
 Observer or other local development services that commonly use port `8000`.
+
+## Sources
+
+Olivaw has a lightweight Sources framework so integrations can expose structured
+information before the project adds memory. A source has an id, display name,
+health status, and `fetch()` method.
+
+v0 includes one deterministic local source:
+
+```bash
+olivaw sources
+```
+
+The manual source returns:
+
+```json
+{
+  "source": "manual",
+  "status": "ok",
+  "items": [
+    {
+      "title": "Example item",
+      "summary": "Demonstrates source plumbing."
+    }
+  ]
+}
+```
+
+Prime Observer, Core Signal, and file-backed sources are roadmap items only.
+They are not integrated yet.
 
 ## macOS LaunchAgent
 
@@ -222,6 +258,7 @@ src/olivaw/
   briefing/       Deterministic briefing schemas, composer, and renderer
   capabilities/   Assistant capabilities such as briefing, chat, and health
   providers/      Provider protocol, Ollama, OpenAI, and router
+  sources/        Structured source interface, registry, and manual source
   services/       Future service extension points
   cli.py          CLI entrypoint
   config.py       Defaults, TOML, and environment overrides

@@ -10,6 +10,7 @@ from starlette.requests import Request
 from olivaw.briefing import compose_briefing
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
+from olivaw.capabilities.sources import SourceInspectionCapability
 from olivaw.config import load_config, public_config
 from olivaw.health import run_health_checks
 from olivaw.assistant.identity import get_identity
@@ -64,6 +65,12 @@ def capabilities_page(request: Request):
         "capabilities.html",
         {"identity": get_identity()},
     )
+
+
+@app.get("/sources", response_class=HTMLResponse)
+def sources_page(request: Request):
+    report = SourceInspectionCapability().run()
+    return templates.TemplateResponse(request, "sources.html", {"report": report})
 
 
 @app.get("/settings", response_class=HTMLResponse)

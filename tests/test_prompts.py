@@ -11,6 +11,7 @@ def test_prompt_builder_includes_current_capabilities():
     assert "deterministic briefing generation from structured input" in prompt
     assert "provider health reporting" in prompt
     assert "read-only configuration display" in prompt
+    assert "source inspection" in prompt
 
 
 def test_prompt_builder_warns_against_claiming_unimplemented_capabilities():
@@ -19,6 +20,9 @@ def test_prompt_builder_warns_against_claiming_unimplemented_capabilities():
     assert "Not implemented yet:" in prompt
     assert "calendar integration" in prompt
     assert "weather lookup" in prompt
+    assert "Prime Observer source" in prompt
+    assert "Core Signal source" in prompt
+    assert "File source" in prompt
     assert "Do not claim unavailable capabilities." in prompt
     assert 'Say "not implemented yet" when asked about missing features.' in prompt
     assert "Avoid speculation about your own implementation." in prompt
