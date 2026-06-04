@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Configuration</h1>
+  <p>Redacted local configuration status for Terminal and LaunchAgent use.</p>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Source</h2>
+      <dl>
+        <dt>Path</dt><dd>{{ config.config_path }}</dd>
+        <dt>Exists</dt><dd>{{ "yes" if config.config_file_exists else "no" }}</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Local</h2>
+      <dl>
+        <dt>Type</dt><dd>{{ config.local.type }}</dd>
+        <dt>Base URL</dt><dd>{{ config.local.base_url }}</dd>
+        <dt>Model</dt><dd>{{ config.local.model }}</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Cloud</h2>
+      <dl>
+        <dt>Enabled</dt><dd>{{ config.cloud.enabled }}</dd>
+        <dt>Model</dt><dd>{{ config.cloud.model }}</dd>
+        <dt>API key present</dt><dd>{{ "yes" if config.cloud.api_key_present else "no" }}</dd>
+      </dl>
+    </div>
+  </section>
+{% endblock %}

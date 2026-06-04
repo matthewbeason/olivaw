@@ -8,6 +8,20 @@ import pytest
 from olivaw.cli import main
 
 
+def clear_config_env(monkeypatch):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_LOCAL_BASE_URL",
+        "OLIVAW_LOCAL_MODEL",
+        "OLIVAW_CLOUD_ENABLED",
+        "OLIVAW_CLOUD_MODEL",
+        "OLIVAW_CLOUD_FALLBACK",
+        "OPENAI_API_KEY",
+        "OLIVAW_OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_cli_reports_missing_config_without_traceback(monkeypatch, tmp_path, capsys):
     missing = tmp_path / "missing.toml"
     monkeypatch.setenv("OLIVAW_CONFIG", str(missing))
@@ -78,3 +92,34 @@ def test_cli_sources_outputs_registered_sources(capsys):
     assert "Olivaw Sources" in captured.out
     assert "Manual example source (manual): ok" in captured.out
     assert "Example item: Demonstrates source plumbing." in captured.out
+
+
+def test_cli_config_outputs_redacted_user_config(monkeypatch, tmp_path, capsys):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = (
+        tmp_path / "Library" / "Application Support" / "Olivaw" / "config.toml"
+    )
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[providers.cloud]
+enabled = true
+model = "gpt-4.1"
+
+[secrets]
+openai_api_key = "config-secret"
+""",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["config"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Olivaw Configuration" in captured.out
+    assert f"Config file path: {config_path}" in captured.out
+    assert "Config file exists: yes" in captured.out
+    assert "- Enabled: yes" in captured.out
+    assert "- API key configured: yes" in captured.out
+    assert "config-secret" not in captured.out

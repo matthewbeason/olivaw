@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from olivaw.briefing import compose_briefing_from_file
-from olivaw.config import ConfigError, load_config, public_config
+from olivaw.config import ConfigError, format_config_report, load_config
 from olivaw.health import format_health_report, run_health_checks
 
 
@@ -74,9 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "config":
-            import json
-
-            print(json.dumps(public_config(load_config()), indent=2, sort_keys=True))
+            print(format_config_report(load_config()))
             return 0
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)

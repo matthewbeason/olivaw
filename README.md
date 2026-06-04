@@ -96,11 +96,24 @@ Then open `http://127.0.0.1:8765`.
 
 ## Configuration
 
-Olivaw loads defaults, then optional TOML configuration, then environment
-variables. Sensitive values should only be supplied through environment
-variables.
+Olivaw loads configuration in this order:
 
-Example `olivaw.toml`:
+1. Environment variables
+2. User config at `~/Library/Application Support/Olivaw/config.toml`
+3. Optional local `./olivaw.toml` for development
+4. Built-in defaults
+
+Environment variables always win. This lets terminal sessions override settings
+temporarily while the LaunchAgent and terminal both share the same persistent
+user config file by default.
+
+Create the user config directory:
+
+```bash
+mkdir -p "$HOME/Library/Application Support/Olivaw"
+```
+
+Example `~/Library/Application Support/Olivaw/config.toml`:
 
 ```toml
 [providers.local]
@@ -115,6 +128,19 @@ model = "gpt-4.1-mini"
 
 [policy]
 cloud_fallback = "disabled"
+
+[secrets]
+openai_api_key = ""
+```
+
+Use [config.example.toml](/Users/mbeason/olivaw/config.example.toml) as a
+starter, but do not commit a real key. Secrets belong only in the user config
+file or environment variables.
+
+Check the active redacted configuration:
+
+```bash
+olivaw config
 ```
 
 Environment overrides:
@@ -143,6 +169,7 @@ olivaw health
 olivaw brief --input examples/daily_context.json
 olivaw chat
 olivaw sources
+olivaw config
 olivaw web
 ```
 
@@ -160,6 +187,7 @@ The web UI uses FastAPI and Jinja templates. Routes:
 - `/capabilities` shows implemented capabilities, roadmap capabilities, and
   operating principles.
 - `/health` shows local/cloud provider and configuration status.
+- `/config` shows redacted configuration source and provider settings.
 - `/settings` shows read-only configuration without exposing secrets.
 
 By default, `olivaw web` listens on `127.0.0.1:8765`:

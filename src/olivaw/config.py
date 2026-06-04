@@ -54,16 +54,19 @@ class OlivawConfig:
     cloud: CloudProviderConfig = field(default_factory=CloudProviderConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     config_path: Path | None = None
+    config_file_exists: bool = False
 
 
 def load_config(path: str | Path | None = None) -> OlivawConfig:
     config_path = _resolve_config_path(path)
-    data = _read_toml(config_path) if config_path else {}
+    config_file_exists = bool(config_path and config_path.exists())
+    data = _read_toml(config_path) if config_file_exists and config_path else {}
 
     providers = data.get("providers", {})
     local_data = providers.get("local", {})
     cloud_data = providers.get("cloud", {})
     policy_data = data.get("policy", {})
+    secrets_data = data.get("secrets", {})
 
     local = LocalProviderConfig(
         type=str(local_data.get("type", "ollama")),
@@ -85,7 +88,11 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         model=str(
             os.getenv("OLIVAW_CLOUD_MODEL", cloud_data.get("model", "gpt-4.1-mini"))
         ),
-        api_key=os.getenv("OLIVAW_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        api_key=_first_present(
+            os.getenv("OLIVAW_OPENAI_API_KEY"),
+            os.getenv("OPENAI_API_KEY"),
+            secrets_data.get("openai_api_key"),
+        ),
     )
 
     policy = PolicyConfig(
@@ -102,6 +109,7 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         cloud=cloud,
         policy=policy,
         config_path=config_path,
+        config_file_exists=config_file_exists,
     )
 
 
@@ -120,7 +128,37 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
         },
         "policy": {"cloud_fallback": config.policy.cloud_fallback},
         "config_path": str(config.config_path) if config.config_path else None,
+        "config_file_exists": config.config_file_exists,
     }
+
+
+def format_config_report(config: OlivawConfig) -> str:
+    path = str(config.config_path) if config.config_path else "not resolved"
+    exists = "yes" if config.config_file_exists else "no"
+    key_present = "yes" if config.cloud.api_key_present else "no"
+    cloud_enabled = "yes" if config.cloud.enabled else "no"
+    return "\n".join(
+        [
+            "Olivaw Configuration",
+            "",
+            f"Config file path: {path}",
+            f"Config file exists: {exists}",
+            "",
+            "Local Provider:",
+            f"- Type: {config.local.type}",
+            f"- Base URL: {config.local.base_url}",
+            f"- Model: {config.local.model}",
+            "",
+            "Cloud Provider:",
+            f"- Type: {config.cloud.type}",
+            f"- Enabled: {cloud_enabled}",
+            f"- Model: {config.cloud.model}",
+            f"- API key configured: {key_present}",
+            "",
+            "Policy:",
+            f"- Cloud fallback: {config.policy.cloud_fallback}",
+        ]
+    )
 
 
 def _resolve_config_path(path: str | Path | None) -> Path | None:
@@ -133,8 +171,15 @@ def _resolve_config_path(path: str | Path | None) -> Path | None:
             Path(configured).expanduser(), "OLIVAW_CONFIG"
         )
 
-    default = Path("olivaw.toml")
-    return default if default.exists() else None
+    user_config = default_user_config_path()
+    if user_config.exists():
+        return user_config
+
+    local_config = Path("olivaw.toml")
+    if local_config.exists():
+        return local_config
+
+    return user_config
 
 
 def _require_config_path(path: Path, source: str) -> Path:
@@ -149,3 +194,17 @@ def _read_toml(path: Path) -> dict[str, object]:
     with path.open("rb") as handle:
         data = tomllib.load(handle)
     return data
+
+
+def default_user_config_path() -> Path:
+    return Path.home() / "Library" / "Application Support" / "Olivaw" / "config.toml"
+
+
+def _first_present(*values: object) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value)
+        if text:
+            return text
+    return None

@@ -108,3 +108,38 @@ def test_settings_does_not_expose_secret(monkeypatch):
     assert response.status_code == 200
     assert "API key present" in response.text
     assert "very-secret" not in response.text
+
+
+def test_config_route_renders_redacted_user_config(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_CLOUD_ENABLED",
+        "OPENAI_API_KEY",
+        "OLIVAW_OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = (
+        tmp_path / "Library" / "Application Support" / "Olivaw" / "config.toml"
+    )
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[providers.cloud]
+enabled = true
+model = "gpt-4.1"
+
+[secrets]
+openai_api_key = "config-secret"
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    assert "Configuration" in response.text
+    assert str(config_path) in response.text
+    assert "API key present" in response.text
+    assert "yes" in response.text
+    assert "config-secret" not in response.text

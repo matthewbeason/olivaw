@@ -82,6 +82,15 @@ def settings_page(request: Request):
     )
 
 
+@app.get("/config", response_class=HTMLResponse)
+def config_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "config.html",
+        {"config": public_config(load_config())},
+    )
+
+
 def _example_briefing() -> str:
     return compose_briefing(
         DailyContext(
