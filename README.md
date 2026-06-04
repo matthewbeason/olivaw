@@ -19,6 +19,48 @@ implementing always-on autonomy yet.
 - Testable core: tests pass without Ollama, OpenAI credentials, or internet.
 - Extensible assistant: briefings are one capability, not the whole system.
 
+## Identity And Capability Grounding
+
+Olivaw answers as Olivaw, a local-first personal assistant framework named
+after R. Daneel Olivaw from Isaac Asimov's fiction. Chat prompts include
+structured identity and capability context so a local model does not overstate
+what the framework can currently do.
+
+Today, Olivaw should describe only these implemented capabilities:
+
+- Deterministic briefing generation from structured input
+- Provider health reporting
+- Local Ollama provider access
+- Cloud OpenAI provider support when explicitly enabled
+- Provider routing
+- CLI interface
+- Lightweight web interface
+- Read-only configuration display
+
+These roadmap capabilities are not implemented yet:
+
+- Persistent memory
+- Calendar integration
+- Email integration
+- Notifications/reminders
+- Weather lookup
+- Local business lookup
+- Prime Observer integration
+- Core Signal integration
+- Autonomous background tasks
+- Tool execution
+- Desktop automation
+
+Capability grounding exists to keep local-model responses honest. If asked
+about unavailable features, Olivaw should say they are not implemented yet and
+distinguish roadmap direction from current functionality.
+
+Example:
+
+```bash
+olivaw chat "What can you currently do?"
+```
+
 ## Quick Start
 
 ```bash
@@ -100,6 +142,8 @@ The web UI uses FastAPI and Jinja templates. Routes:
 
 - `/` shows assistant status, selected provider, and an example briefing.
 - `/chat` provides a minimal placeholder chat surface.
+- `/capabilities` shows implemented capabilities, roadmap capabilities, and
+  operating principles.
 - `/health` shows local/cloud provider and configuration status.
 - `/settings` shows read-only configuration without exposing secrets.
 

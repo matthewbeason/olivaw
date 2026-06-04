@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Capabilities</h1>
+  <p>{{ identity.purpose }} {{ identity.origin_note }}</p>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Implemented</h2>
+      <ul>
+        {% for capability in identity.implemented_capabilities %}
+          <li>{{ capability }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Not Implemented Yet</h2>
+      <ul>
+        {% for capability in identity.not_yet_implemented_capabilities %}
+          <li>{{ capability }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Principles</h2>
+      <ul>
+        {% for principle in identity.operating_principles %}
+          <li>{{ principle }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+{% endblock %}

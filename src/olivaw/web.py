@@ -12,6 +12,7 @@ from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.config import load_config, public_config
 from olivaw.health import run_health_checks
+from olivaw.assistant.identity import get_identity
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
@@ -54,6 +55,15 @@ def chat_submit(request: Request, prompt: str = Form(...)):
 def health_page(request: Request):
     report = run_health_checks()
     return templates.TemplateResponse(request, "health.html", {"health": report})
+
+
+@app.get("/capabilities", response_class=HTMLResponse)
+def capabilities_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "capabilities.html",
+        {"identity": get_identity()},
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)

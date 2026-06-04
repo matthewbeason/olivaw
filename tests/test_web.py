@@ -65,6 +65,17 @@ def test_health_route_renders():
     assert "Mocked local provider status." in response.text
 
 
+def test_capabilities_route_renders_identity_grounding():
+    response = client.get("/capabilities")
+
+    assert response.status_code == 200
+    assert "Implemented" in response.text
+    assert "Not Implemented Yet" in response.text
+    assert "deterministic briefing generation from structured input" in response.text
+    assert "calendar integration" in response.text
+    assert "weather lookup" in response.text
+
+
 def test_settings_does_not_expose_secret(monkeypatch):
     monkeypatch.setenv("OLIVAW_OPENAI_API_KEY", "very-secret")
 
