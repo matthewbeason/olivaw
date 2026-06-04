@@ -80,33 +80,35 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
     local = LocalProviderConfig(
         type=str(local_data.get("type", "ollama")),
         base_url=str(
-            os.getenv(
+            _env_value(
                 "OLIVAW_LOCAL_BASE_URL",
                 local_data.get("base_url", "http://localhost:11434"),
             )
         ),
         model=str(
-            os.getenv("OLIVAW_LOCAL_MODEL", local_data.get("model", "llama3.1:8b"))
+            _env_value("OLIVAW_LOCAL_MODEL", local_data.get("model", "llama3.1:8b"))
         ),
     )
 
     cloud_enabled_default = bool(cloud_data.get("enabled", False))
     cloud = CloudProviderConfig(
         type=str(cloud_data.get("type", "openai")),
-        enabled=_bool_from_env(os.getenv("OLIVAW_CLOUD_ENABLED"), cloud_enabled_default),
+        enabled=_bool_from_env(
+            _env_value("OLIVAW_CLOUD_ENABLED"), cloud_enabled_default
+        ),
         model=str(
-            os.getenv("OLIVAW_CLOUD_MODEL", cloud_data.get("model", "gpt-4.1-mini"))
+            _env_value("OLIVAW_CLOUD_MODEL", cloud_data.get("model", "gpt-4.1-mini"))
         ),
         api_key=_first_present(
-            os.getenv("OLIVAW_OPENAI_API_KEY"),
-            os.getenv("OPENAI_API_KEY"),
+            _env_value("OLIVAW_OPENAI_API_KEY"),
+            _env_value("OPENAI_API_KEY"),
             secrets_data.get("openai_api_key"),
         ),
     )
 
     policy = PolicyConfig(
         cloud_fallback=str(
-            os.getenv(
+            _env_value(
                 "OLIVAW_CLOUD_FALLBACK",
                 policy_data.get("cloud_fallback", "disabled"),
             )
@@ -115,13 +117,15 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
 
     files = FileSourceConfig(
         directory=Path(
-            os.getenv(
+            _env_value(
                 "OLIVAW_FILES_DIR",
                 files_data.get("directory", default_user_data_path()),
             )
         ).expanduser(),
         max_bytes=int(
-            os.getenv("OLIVAW_FILES_MAX_BYTES", files_data.get("max_bytes", 1_048_576))
+            _env_value(
+                "OLIVAW_FILES_MAX_BYTES", files_data.get("max_bytes", 1_048_576)
+            )
         ),
     )
 
@@ -244,3 +248,10 @@ def _first_present(*values: object) -> str | None:
         if text:
             return text
     return None
+
+
+def _env_value(name: str, default: object | None = None) -> object | None:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value

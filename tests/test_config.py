@@ -19,6 +19,8 @@ def clear_config_env(monkeypatch):
         "OLIVAW_CLOUD_ENABLED",
         "OLIVAW_CLOUD_MODEL",
         "OLIVAW_CLOUD_FALLBACK",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_FILES_MAX_BYTES",
         "OPENAI_API_KEY",
         "OLIVAW_OPENAI_API_KEY",
     ):
@@ -119,6 +121,81 @@ openai_api_key = "config-secret"
     assert public["cloud"]["api_key_present"] is True
     assert "env-secret" not in str(public)
     assert "config-secret" not in str(public)
+
+
+def test_blank_environment_values_do_not_mask_user_config(monkeypatch, tmp_path):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = default_user_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[providers.local]
+base_url = "http://localhost:11435"
+model = "mistral"
+
+[providers.cloud]
+enabled = true
+model = "gpt-4.1"
+
+[policy]
+cloud_fallback = "enabled"
+
+[sources.files]
+directory = "~/Library/Application Support/Olivaw/data"
+max_bytes = 2048
+
+[secrets]
+openai_api_key = "config-secret"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OLIVAW_LOCAL_BASE_URL", "")
+    monkeypatch.setenv("OLIVAW_LOCAL_MODEL", "")
+    monkeypatch.setenv("OLIVAW_CLOUD_ENABLED", "")
+    monkeypatch.setenv("OLIVAW_CLOUD_MODEL", "")
+    monkeypatch.setenv("OLIVAW_CLOUD_FALLBACK", "")
+    monkeypatch.setenv("OLIVAW_FILES_DIR", "")
+    monkeypatch.setenv("OLIVAW_FILES_MAX_BYTES", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("OLIVAW_OPENAI_API_KEY", "")
+
+    config = load_config()
+
+    assert config.local.base_url == "http://localhost:11435"
+    assert config.local.model == "mistral"
+    assert config.cloud.enabled is True
+    assert config.cloud.model == "gpt-4.1"
+    assert config.policy.cloud_fallback == "enabled"
+    assert config.files.directory == (
+        tmp_path / "Library" / "Application Support" / "Olivaw" / "data"
+    )
+    assert config.files.max_bytes == 2048
+    assert config.cloud.api_key == "config-secret"
+
+
+def test_explicit_false_environment_overrides_user_config(monkeypatch, tmp_path):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = default_user_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[providers.cloud]
+enabled = true
+
+[policy]
+cloud_fallback = "enabled"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OLIVAW_CLOUD_ENABLED", "false")
+    monkeypatch.setenv("OLIVAW_CLOUD_FALLBACK", "disabled")
+
+    config = load_config()
+
+    assert config.cloud.enabled is False
+    assert config.policy.cloud_fallback == "disabled"
 
 
 def test_openai_api_key_environment_is_supported(monkeypatch, tmp_path):
