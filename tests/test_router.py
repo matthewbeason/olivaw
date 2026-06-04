@@ -60,6 +60,21 @@ def test_router_requires_explicit_cloud_fallback():
         router.complete(CompletionRequest(prompt="hello"))
 
 
+def test_router_does_not_use_enabled_cloud_when_fallback_disabled():
+    router = RouterProvider(
+        OlivawConfig(cloud=CloudProviderConfig(enabled=True, api_key="x")),
+        local_provider=StubProvider(status("local", "local", "unavailable")),
+        cloud_provider=StubProvider(status("cloud", "cloud", "available")),
+    )
+
+    report = router.health()
+
+    assert report.selected_provider is None
+    assert "Cloud fallback is disabled by policy." in report.notes
+    with pytest.raises(RuntimeError):
+        router.complete(CompletionRequest(prompt="hello"))
+
+
 def test_router_uses_cloud_when_enabled_and_allowed():
     config = OlivawConfig(
         cloud=CloudProviderConfig(enabled=True, api_key="x"),
@@ -73,4 +88,3 @@ def test_router_uses_cloud_when_enabled_and_allowed():
 
     assert router.health().selected_provider == "cloud"
     assert router.complete(CompletionRequest(prompt="hello")).provider == "cloud"
-

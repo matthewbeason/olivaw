@@ -76,6 +76,19 @@ def test_capabilities_route_renders_identity_grounding():
     assert "weather lookup" in response.text
 
 
+def test_chat_post_renders_chat_response(monkeypatch):
+    def fake_run(self, prompt, config=None):
+        assert prompt == "hello"
+        return "mocked OpenAI-capable chat response"
+
+    monkeypatch.setattr("olivaw.web.ChatCapability.run", fake_run)
+
+    response = client.post("/chat", data={"prompt": "hello"})
+
+    assert response.status_code == 200
+    assert "mocked OpenAI-capable chat response" in response.text
+
+
 def test_settings_does_not_expose_secret(monkeypatch):
     monkeypatch.setenv("OLIVAW_OPENAI_API_KEY", "very-secret")
 

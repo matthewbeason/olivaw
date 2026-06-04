@@ -35,6 +35,15 @@ def test_environment_overrides_sensitive_values(monkeypatch):
     assert "secret" not in str(public)
 
 
+def test_openai_api_key_environment_is_supported(monkeypatch):
+    monkeypatch.delenv("OLIVAW_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+
+    config = load_config()
+
+    assert config.cloud.api_key == "openai-secret"
+
+
 def test_explicit_missing_config_path_raises_clear_error(tmp_path):
     missing = tmp_path / "missing.toml"
 

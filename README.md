@@ -123,6 +123,15 @@ Environment overrides:
 - `OLIVAW_CLOUD_FALLBACK`
 - `OPENAI_API_KEY` or `OLIVAW_OPENAI_API_KEY`
 
+Equivalent `.env` values:
+
+```bash
+OPENAI_API_KEY=
+OLIVAW_CLOUD_ENABLED=false
+OLIVAW_CLOUD_MODEL=gpt-4.1-mini
+OLIVAW_CLOUD_FALLBACK=disabled
+```
+
 ## CLI
 
 ```bash
@@ -231,10 +240,22 @@ suggest running:
 ollama serve
 ```
 
-OpenAI support is present as an optional cloud provider. It is disabled by
-default and only considered when `OLIVAW_CLOUD_ENABLED=true` or equivalent TOML
-configuration is set. Cloud fallback remains disabled unless explicitly enabled
-with `OLIVAW_CLOUD_FALLBACK=enabled`.
+OpenAI support is present as an optional cloud provider using the official
+OpenAI Python SDK and the Responses API. It is disabled by default and only
+considered when `OLIVAW_CLOUD_ENABLED=true` or equivalent TOML configuration is
+set. The API key is read from `OPENAI_API_KEY` or `OLIVAW_OPENAI_API_KEY` and is
+never shown in public configuration output.
+
+Cloud fallback remains disabled unless explicitly enabled with:
+
+```bash
+OLIVAW_CLOUD_FALLBACK=enabled
+```
+
+Local routing remains preferred. If Ollama is available, `olivaw chat` uses the
+local provider even when OpenAI is configured. If Ollama is unavailable, OpenAI
+can be used only when the cloud provider is enabled, an API key is present, and
+cloud fallback is explicitly enabled.
 
 ## Briefing Capability
 

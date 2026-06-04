@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-import json
-import urllib.request
 from dataclasses import dataclass
+from typing import Any, Callable
 
 from olivaw.config import CloudProviderConfig
 from olivaw.models import CompletionRequest, CompletionResponse, ProviderStatus
+
+ClientFactory = Callable[..., Any]
 
 
 @dataclass
 class OpenAIProvider:
     config: CloudProviderConfig
     timeout: float = 10.0
+    client_factory: ClientFactory | None = None
 
     name: str = "openai"
 
@@ -39,7 +41,10 @@ class OpenAIProvider:
             kind="cloud",
             state="available",
             message="OpenAI cloud provider is configured.",
-            detail="Health check only verifies local configuration in v0.",
+            detail=(
+                "An OpenAI API key is present and cloud provider is explicitly enabled. "
+                "Health check does not make a model call."
+            ),
             model=self.config.model,
         )
 
@@ -49,23 +54,40 @@ class OpenAIProvider:
         if not self.config.api_key:
             raise RuntimeError("OpenAI API key is not configured.")
 
-        messages = []
-        if request.system_prompt:
-            messages.append({"role": "system", "content": request.system_prompt})
-        messages.append({"role": "user", "content": request.prompt})
+        client = self._create_client()
+        try:
+            response = client.responses.create(
+                model=self.config.model,
+                instructions=request.system_prompt,
+                input=request.prompt,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"OpenAI Responses API request failed: {type(exc).__name__}: {exc}"
+            ) from exc
 
-        payload = {"model": self.config.model, "messages": messages}
-        http_request = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
+        try:
+            text = getattr(response, "output_text", None)
+        except Exception as exc:
+            raise RuntimeError(
+                f"OpenAI response text extraction failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError("OpenAI response did not include output_text.")
+
+        return CompletionResponse(
+            text=text,
+            provider=self.name,
+            model=self.config.model,
         )
-        with urllib.request.urlopen(http_request, timeout=self.timeout) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        text = data["choices"][0]["message"]["content"]
-        return CompletionResponse(text=text, provider=self.name, model=self.config.model)
 
+    def _create_client(self):
+        factory = self.client_factory or _default_client_factory
+        return factory(api_key=self.config.api_key, timeout=self.timeout)
+
+
+def _default_client_factory(**kwargs):
+    from openai import OpenAI
+
+    return OpenAI(**kwargs)
