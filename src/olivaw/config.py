@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+class ConfigError(RuntimeError):
+    """Base error for configuration failures."""
+
+
+class ConfigPathError(ConfigError):
+    """Raised when an explicitly configured path cannot be loaded."""
+
+
 def _bool_from_env(value: str | None, default: bool) -> bool:
     if value is None:
         return default
@@ -116,17 +124,28 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
 
 
 def _resolve_config_path(path: str | Path | None) -> Path | None:
-    configured = path or os.getenv("OLIVAW_CONFIG")
+    if path is not None:
+        return _require_config_path(Path(path).expanduser(), "explicit config path")
+
+    configured = os.getenv("OLIVAW_CONFIG")
     if configured:
-        candidate = Path(configured).expanduser()
-        return candidate if candidate.exists() else None
+        return _require_config_path(
+            Path(configured).expanduser(), "OLIVAW_CONFIG"
+        )
 
     default = Path("olivaw.toml")
     return default if default.exists() else None
+
+
+def _require_config_path(path: Path, source: str) -> Path:
+    if path.exists():
+        return path
+    raise ConfigPathError(
+        f"Olivaw config file from {source} does not exist: {path}"
+    )
 
 
 def _read_toml(path: Path) -> dict[str, object]:
     with path.open("rb") as handle:
         data = tomllib.load(handle)
     return data
-

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from olivaw.briefing import compose_briefing_from_file
-from olivaw.config import load_config, public_config
+from olivaw.config import ConfigError, load_config, public_config
 from olivaw.health import format_health_report, run_health_checks
 
 
@@ -40,31 +41,35 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "health":
-        print(format_health_report(run_health_checks()))
-        return 0
+    try:
+        if args.command == "health":
+            print(format_health_report(run_health_checks()))
+            return 0
 
-    if args.command == "brief":
-        print(compose_briefing_from_file(args.input), end="")
-        return 0
+        if args.command == "brief":
+            print(compose_briefing_from_file(args.input), end="")
+            return 0
 
-    if args.command == "chat":
-        from olivaw.capabilities.chat import ChatCapability
+        if args.command == "chat":
+            from olivaw.capabilities.chat import ChatCapability
 
-        print(ChatCapability().run(args.prompt))
-        return 0
+            print(ChatCapability().run(args.prompt))
+            return 0
 
-    if args.command == "web":
-        import uvicorn
+        if args.command == "web":
+            import uvicorn
 
-        uvicorn.run("olivaw.web:app", host=args.host, port=args.port, reload=False)
-        return 0
+            uvicorn.run("olivaw.web:app", host=args.host, port=args.port, reload=False)
+            return 0
 
-    if args.command == "config":
-        import json
+        if args.command == "config":
+            import json
 
-        print(json.dumps(public_config(load_config()), indent=2, sort_keys=True))
-        return 0
+            print(json.dumps(public_config(load_config()), indent=2, sort_keys=True))
+            return 0
+    except ConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
 
     parser.print_help()
     return 1
@@ -72,4 +77,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

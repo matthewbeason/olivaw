@@ -7,13 +7,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-from olivaw.briefing import compose_briefing_from_file
+from olivaw.briefing import compose_briefing
+from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.config import load_config, public_config
 from olivaw.health import run_health_checks
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
-EXAMPLE_BRIEFING = Path("examples/daily_context.json")
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 app = FastAPI(title="Olivaw", version="0.1.0")
@@ -66,7 +66,43 @@ def settings_page(request: Request):
 
 
 def _example_briefing() -> str:
-    if EXAMPLE_BRIEFING.exists():
-        return compose_briefing_from_file(EXAMPLE_BRIEFING)
-    return "Example briefing unavailable. Run from the repository root to load fixtures."
-
+    return compose_briefing(
+        DailyContext(
+            date="2026-06-04",
+            focus="Stabilize Olivaw v0.1 as a local-first assistant foundation.",
+            summary=(
+                "Keep the framework small, deterministic, and ready for future "
+                "assistant capabilities."
+            ),
+            priorities=[
+                Priority(
+                    title="Prefer local providers",
+                    why="Cloud escalation should remain explicit.",
+                    status="active",
+                ),
+                Priority(
+                    title="Keep health checks actionable",
+                    why="Missing services should guide setup instead of crashing.",
+                    status="active",
+                ),
+            ],
+            signals=[
+                Signal(
+                    source="built-in sample",
+                    title="Briefing renders without repo fixtures",
+                    detail="The web home page can run from an installed package.",
+                )
+            ],
+            projects=[
+                ProjectState(
+                    name="Olivaw",
+                    state="v0.1 cleanup",
+                    next_step="Run tests and validate CLI behavior.",
+                )
+            ],
+            reminders=[
+                "Do not integrate Prime Observer or Core Signal in v0.1.",
+                "Do not implement memory or background automation yet.",
+            ],
+        )
+    )
