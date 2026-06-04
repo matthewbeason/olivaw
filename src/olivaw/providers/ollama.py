@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+from olivaw.config import LocalProviderConfig
+from olivaw.models import CompletionRequest, CompletionResponse, ProviderStatus
+
+
+@dataclass
+class OllamaProvider:
+    config: LocalProviderConfig
+    timeout: float = 1.0
+
+    name: str = "ollama"
+
+    def health(self) -> ProviderStatus:
+        url = f"{self.config.base_url.rstrip('/')}/api/tags"
+        try:
+            with urllib.request.urlopen(url, timeout=self.timeout) as response:
+                if 200 <= response.status < 300:
+                    return ProviderStatus(
+                        name=self.name,
+                        kind="local",
+                        state="available",
+                        message="Ollama is reachable.",
+                        detail=f"Connected to {self.config.base_url}",
+                        model=self.config.model,
+                    )
+        except (OSError, urllib.error.URLError) as exc:
+            return ProviderStatus(
+                name=self.name,
+                kind="local",
+                state="unavailable",
+                message="Unable to connect to Ollama.",
+                detail=(
+                    f"Expected endpoint: {self.config.base_url}. "
+                    "Install Ollama and run: ollama serve. "
+                    f"Reason: {exc}"
+                ),
+                model=self.config.model,
+            )
+
+        return ProviderStatus(
+            name=self.name,
+            kind="local",
+            state="unknown",
+            message="Ollama returned an unexpected health response.",
+            detail=f"Checked {url}",
+            model=self.config.model,
+        )
+
+    def complete(self, request: CompletionRequest) -> CompletionResponse:
+        url = f"{self.config.base_url.rstrip('/')}/api/generate"
+        payload = {
+            "model": self.config.model,
+            "prompt": request.prompt,
+            "system": request.system_prompt,
+            "stream": False,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        http_request = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(http_request, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return CompletionResponse(
+            text=str(data.get("response", "")),
+            provider=self.name,
+            model=self.config.model,
+        )
+

@@ -1,0 +1,6 @@
+{
+  "integration": "core_signal",
+  "status": "not_integrated",
+  "note": "Reserved fixture for future integration work. v0 does not read this file."
+}
+

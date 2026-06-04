@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Settings</h1>
+  <section class="grid">
+    <div class="card">
+      <h2>Local</h2>
+      <dl>
+        <dt>Type</dt><dd>{{ config.local.type }}</dd>
+        <dt>Base URL</dt><dd>{{ config.local.base_url }}</dd>
+        <dt>Model</dt><dd>{{ config.local.model }}</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Cloud</h2>
+      <dl>
+        <dt>Type</dt><dd>{{ config.cloud.type }}</dd>
+        <dt>Enabled</dt><dd>{{ config.cloud.enabled }}</dd>
+        <dt>Model</dt><dd>{{ config.cloud.model }}</dd>
+        <dt>API key present</dt><dd>{{ config.cloud.api_key_present }}</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Policy</h2>
+      <dl>
+        <dt>Cloud fallback</dt><dd>{{ config.policy.cloud_fallback }}</dd>
+        <dt>Config path</dt><dd>{{ config.config_path or "defaults only" }}</dd>
+      </dl>
+    </div>
+  </section>
+{% endblock %}
+

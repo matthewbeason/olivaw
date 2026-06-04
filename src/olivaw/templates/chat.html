@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Chat</h1>
+  <p>Provider-routed placeholder for future conversation behavior.</p>
+  <form method="post" action="/chat">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" name="prompt">{{ prompt }}</textarea>
+    <button type="submit">Send</button>
+  </form>
+  {% if response %}
+    <h2>Response</h2>
+    <pre>{{ response }}</pre>
+  {% endif %}
+{% endblock %}
+

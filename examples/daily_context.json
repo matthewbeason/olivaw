@@ -1,0 +1,46 @@
+{
+  "date": "2026-06-04",
+  "focus": "Stabilize Olivaw v0 as a local-first assistant foundation.",
+  "summary": "Keep the first version small: health checks, deterministic briefing, provider routing, CLI, and web UI.",
+  "priorities": [
+    {
+      "title": "Ship the initial framework",
+      "why": "The repository needs a clean base before additional assistant behavior is added.",
+      "status": "in_progress"
+    },
+    {
+      "title": "Keep cloud fallback explicit",
+      "why": "Local-first behavior should remain predictable and privacy-preserving.",
+      "status": "planned"
+    },
+    {
+      "title": "Make health checks actionable",
+      "why": "Missing local services should guide setup instead of causing crashes.",
+      "status": "planned"
+    }
+  ],
+  "signals": [
+    {
+      "source": "local fixtures",
+      "title": "Briefing works without a model",
+      "detail": "The v0 briefing renderer is deterministic and testable offline."
+    },
+    {
+      "source": "provider router",
+      "title": "Local provider is preferred",
+      "detail": "Cloud models are ignored unless explicitly enabled."
+    }
+  ],
+  "projects": [
+    {
+      "name": "Olivaw",
+      "state": "foundation",
+      "next_step": "Run tests, verify CLI commands, and start the web app."
+    }
+  ],
+  "reminders": [
+    "Do not integrate Prime Observer or Core Signal in v0.",
+    "Do not commit secrets or local configuration."
+  ]
+}
+

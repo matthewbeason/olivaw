@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Assistant Home</h1>
+  <p>Local-first status and the current deterministic briefing capability.</p>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Status</h2>
+      <p class="status {{ health.local.state }}">{{ health.local.state }}</p>
+      <p>{{ health.local.message }}</p>
+    </div>
+    <div class="card">
+      <h2>Provider</h2>
+      <dl>
+        <dt>Selected</dt><dd>{{ health.selected_provider or "None" }}</dd>
+        <dt>Local model</dt><dd>{{ config.local.model }}</dd>
+        <dt>Cloud fallback</dt><dd>{{ health.cloud_fallback }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <h2>Example Briefing</h2>
+  <pre>{{ briefing }}</pre>
+{% endblock %}
+

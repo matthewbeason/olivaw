@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from olivaw.briefing import compose_briefing_from_file
+from olivaw.config import load_config, public_config
+from olivaw.health import format_health_report, run_health_checks
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="olivaw",
+        description="Local-first personal assistant framework.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("health", help="Report provider and configuration health.")
+
+    brief = subparsers.add_parser("brief", help="Generate a deterministic briefing.")
+    brief.add_argument(
+        "--input",
+        required=True,
+        type=Path,
+        help="Path to a structured daily context JSON file.",
+    )
+
+    chat = subparsers.add_parser("chat", help="Run placeholder provider-routed chat.")
+    chat.add_argument("prompt", nargs="?", default="Hello from Olivaw.")
+
+    web = subparsers.add_parser("web", help="Start the local web application.")
+    web.add_argument("--host", default="127.0.0.1")
+    web.add_argument("--port", type=int, default=8000)
+
+    subparsers.add_parser("config", help="Print non-secret effective configuration.")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "health":
+        print(format_health_report(run_health_checks()))
+        return 0
+
+    if args.command == "brief":
+        print(compose_briefing_from_file(args.input), end="")
+        return 0
+
+    if args.command == "chat":
+        from olivaw.capabilities.chat import ChatCapability
+
+        print(ChatCapability().run(args.prompt))
+        return 0
+
+    if args.command == "web":
+        import uvicorn
+
+        uvicorn.run("olivaw.web:app", host=args.host, port=args.port, reload=False)
+        return 0
+
+    if args.command == "config":
+        import json
+
+        print(json.dumps(public_config(load_config()), indent=2, sort_keys=True))
+        return 0
+
+    parser.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

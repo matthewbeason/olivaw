@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Health</h1>
+  <section class="grid">
+    <div class="card">
+      <h2>Local Provider</h2>
+      <p class="status {{ health.local.state }}">{{ health.local.state }}</p>
+      <dl>
+        <dt>Name</dt><dd>{{ health.local.name }}</dd>
+        <dt>Model</dt><dd>{{ health.local.model }}</dd>
+        <dt>Message</dt><dd>{{ health.local.message }}</dd>
+        <dt>Detail</dt><dd>{{ health.local.detail or "" }}</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Cloud Provider</h2>
+      <p class="status {{ health.cloud.state }}">{{ health.cloud.state }}</p>
+      <dl>
+        <dt>Name</dt><dd>{{ health.cloud.name }}</dd>
+        <dt>Model</dt><dd>{{ health.cloud.model }}</dd>
+        <dt>Message</dt><dd>{{ health.cloud.message }}</dd>
+        <dt>Detail</dt><dd>{{ health.cloud.detail or "" }}</dd>
+      </dl>
+    </div>
+  </section>
+{% endblock %}
+

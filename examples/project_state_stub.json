@@ -1,0 +1,10 @@
+{
+  "projects": [
+    {
+      "name": "Olivaw",
+      "state": "foundation",
+      "next_step": "Keep v0 local-first, deterministic, and easy to extend."
+    }
+  ]
+}
+
