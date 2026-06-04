@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     web = subparsers.add_parser("web", help="Start the local web application.")
     web.add_argument("--host", default="127.0.0.1")
-    web.add_argument("--port", type=int, default=8000)
+    web.add_argument("--port", type=int, default=8765)
 
     subparsers.add_parser("config", help="Print non-secret effective configuration.")
     return parser

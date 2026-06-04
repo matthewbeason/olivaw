@@ -88,7 +88,7 @@ Start the local web app:
 olivaw web
 ```
 
-Then open `http://127.0.0.1:8000`.
+Then open `http://127.0.0.1:8765`.
 
 ## Configuration
 
@@ -146,6 +146,64 @@ The web UI uses FastAPI and Jinja templates. Routes:
   operating principles.
 - `/health` shows local/cloud provider and configuration status.
 - `/settings` shows read-only configuration without exposing secrets.
+
+By default, `olivaw web` listens on `127.0.0.1:8765`:
+
+```bash
+olivaw web --host 127.0.0.1 --port 8765
+```
+
+Olivaw uses port `8765` instead of `8000` so it does not collide with Prime
+Observer or other local development services that commonly use port `8000`.
+
+## macOS LaunchAgent
+
+Olivaw can run the web UI continuously in the background on macOS through
+launchd. This keeps the local web interface available without leaving a terminal
+window open. It is an always-on web UI only; v0 does not add memory, background
+task scheduling, notifications, or autonomous work.
+
+The LaunchAgent template is:
+
+```text
+deploy/com.beason.olivaw.plist
+```
+
+It runs:
+
+```bash
+/Users/mbeason/olivaw/.venv/bin/olivaw web --host 127.0.0.1 --port 8765
+```
+
+Install and start the LaunchAgent:
+
+```bash
+scripts/install_launch_agent.sh
+```
+
+Check status:
+
+```bash
+scripts/status_launch_agent.sh
+```
+
+Uninstall and stop the LaunchAgent:
+
+```bash
+scripts/uninstall_launch_agent.sh
+```
+
+Logs are written to:
+
+```text
+/Users/mbeason/Library/Logs/olivaw.log
+/Users/mbeason/Library/Logs/olivaw-error.log
+```
+
+This launchd support is the first deployment step toward future always-on
+assistant behavior: a persistent local web surface that can later host recurring
+tasks, memory, notifications, and integrations when those capabilities are
+implemented.
 
 ## Architecture
 
