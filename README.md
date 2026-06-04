@@ -96,6 +96,16 @@ olivaw web
 
 Then open `http://127.0.0.1:8765`.
 
+For LAN access from another device, bind to all local interfaces:
+
+```bash
+olivaw web --host 0.0.0.0 --port 8765
+```
+
+Then open `http://home:8765` from another device on the same network, assuming
+`home` resolves to this Mac. LAN mode exposes Olivaw to devices on your local
+network, so keep `127.0.0.1` for localhost-only use.
+
 ## Configuration
 
 Olivaw loads configuration in this order:
@@ -204,6 +214,15 @@ By default, `olivaw web` listens on `127.0.0.1:8765`:
 olivaw web --host 127.0.0.1 --port 8765
 ```
 
+For LAN access, bind to `0.0.0.0`:
+
+```bash
+olivaw web --host 0.0.0.0 --port 8765
+```
+
+Then open `http://home:8765` from another device on the same LAN, assuming
+`home` resolves to this Mac. LAN mode exposes Olivaw to your local network.
+
 Olivaw uses port `8765` instead of `8000` so it does not collide with Prime
 Observer or other local development services that commonly use port `8000`.
 
@@ -277,10 +296,33 @@ It runs:
 /Users/mbeason/olivaw/.venv/bin/olivaw web --host 127.0.0.1 --port 8765
 ```
 
-Install and start the LaunchAgent:
+The checked-in plist uses localhost-only mode, binding to `127.0.0.1`. Install
+and start the LaunchAgent in localhost-only mode:
 
 ```bash
 scripts/install_launch_agent.sh
+```
+
+Install and start it in LAN mode:
+
+```bash
+scripts/install_launch_agent.sh --lan
+```
+
+This writes an installed plist that runs:
+
+```bash
+/Users/mbeason/olivaw/.venv/bin/olivaw web --host 0.0.0.0 --port 8765
+```
+
+In LAN mode, the local URL remains `http://127.0.0.1:8765`, and another device
+on the same network can use `http://home:8765` when `home` resolves to this Mac.
+LAN mode exposes Olivaw to devices on your local network.
+
+Custom host and port are also supported:
+
+```bash
+scripts/install_launch_agent.sh --host 0.0.0.0 --port 8765
 ```
 
 Check status:

@@ -42,3 +42,28 @@ def test_launchd_helper_scripts_exist():
     assert Path("scripts/install_launch_agent.sh").exists()
     assert Path("scripts/uninstall_launch_agent.sh").exists()
     assert Path("scripts/status_launch_agent.sh").exists()
+
+
+def test_install_launch_agent_supports_lan_binding_options():
+    script = Path("scripts/install_launch_agent.sh").read_text(encoding="utf-8")
+
+    assert 'HOST="${OLIVAW_WEB_HOST:-127.0.0.1}"' in script
+    assert 'PORT="${OLIVAW_WEB_PORT:-8765}"' in script
+    assert "--lan" in script
+    assert 'HOST="0.0.0.0"' in script
+    assert "--host HOST" in script
+    assert "--port PORT" in script
+    assert "Set :ProgramArguments:3 ${HOST}" in script
+    assert "Set :ProgramArguments:5 ${PORT}" in script
+    assert "LAN URL example: http://home:${PORT}" in script
+    assert "LAN mode exposes Olivaw" in script
+
+
+def test_status_launch_agent_reports_configured_host_and_lan_url():
+    script = Path("scripts/status_launch_agent.sh").read_text(encoding="utf-8")
+
+    assert 'Print :ProgramArguments:3' in script
+    assert 'Print :ProgramArguments:5' in script
+    assert "Local URL: http://127.0.0.1:${PORT}" in script
+    assert "LAN URL example: http://home:${PORT}" in script
+    assert "LAN mode exposes Olivaw" in script
