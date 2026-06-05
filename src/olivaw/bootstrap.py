@@ -26,6 +26,10 @@ max_bytes = 1048576
 directory = "~/prime-observer/viz"
 enabled = true
 
+[sources.core_signal]
+directory = "~/core-signal/reports"
+enabled = true
+
 [secrets]
 # Replace with a real key in your user config file only:
 # ~/Library/Application Support/Olivaw/config.toml

@@ -41,6 +41,7 @@ Today, Olivaw should describe only these implemented capabilities:
 - Source-aware response attribution
 - Source-backed briefing generation
 - PrimeObserverSource
+- CoreSignalSource
 
 These roadmap capabilities are not implemented yet:
 
@@ -50,8 +51,6 @@ These roadmap capabilities are not implemented yet:
 - Notifications/reminders
 - Weather lookup
 - Local business lookup
-- Core Signal integration
-- CoreSignalSource
 - WeatherSource
 - CalendarSource
 - EmailSource
@@ -152,6 +151,10 @@ max_bytes = 1048576
 directory = "~/prime-observer/viz"
 enabled = true
 
+[sources.core_signal]
+directory = "~/core-signal/reports"
+enabled = true
+
 [secrets]
 openai_api_key = ""
 ```
@@ -176,6 +179,8 @@ Environment overrides:
 - `OLIVAW_CLOUD_FALLBACK`
 - `OLIVAW_PRIME_OBSERVER_DIR`
 - `OLIVAW_PRIME_OBSERVER_ENABLED`
+- `OLIVAW_CORE_SIGNAL_DIR`
+- `OLIVAW_CORE_SIGNAL_ENABLED`
 - `OPENAI_API_KEY` or `OLIVAW_OPENAI_API_KEY`
 
 Equivalent `.env` values:
@@ -234,8 +239,8 @@ message.
 The current source-backed chat paths are intentionally small: capability
 questions and source availability questions can be answered from Olivaw's own
 metadata. Source-backed answers can cite registered sources such as
-PrimeObserverSource. Future source-backed answers can cite sources such as
-CoreSignalSource, WeatherSource, CalendarSource, and EmailSource once those
+PrimeObserverSource and CoreSignalSource. Future source-backed answers can cite
+sources such as WeatherSource, CalendarSource, and EmailSource once those
 sources exist. Those sources are roadmap items only today.
 
 ## Web UI
@@ -276,7 +281,7 @@ Olivaw has a lightweight Sources framework so integrations can expose structured
 information before the project adds memory. A source has an id, display name,
 health status, and `fetch()` method.
 
-v0 includes three local sources:
+v0 includes four local sources:
 
 ```bash
 olivaw init-data
@@ -343,8 +348,40 @@ is used as a latest-sample summary. Markdown and text reports are read as short
 previews. Missing directories, empty directories, disabled configuration, and
 malformed files degrade through source health/status instead of crashing.
 
-CoreSignalSource, WeatherSource, CalendarSource, EmailSource, and source
-aggregation are roadmap items only. They are not integrated yet.
+CoreSignalSource reads Core Signal outputs without modifying Core Signal. Core
+Signal remains the authoritative interpretation layer; Olivaw consumes and
+presents interpretations Core Signal has already produced.
+
+The default directory is:
+
+```text
+~/core-signal/reports/
+```
+
+Expected files include:
+
+```text
+reports/
+  latest.md
+  morning-brief-YYYY-MM-DD.md
+  patterns/latest.md
+  latest.json
+```
+
+Structured JSON is preferred when available. Markdown morning briefs are used
+for status, summary, recommended action, and "Worth knowing" findings. Pattern
+reports are read as concise interpretation summaries and noteworthy pattern
+titles. Missing directories, empty directories, disabled configuration, and
+malformed files degrade through source health/status instead of crashing.
+
+Prime Observer and Core Signal stay separate:
+
+- Prime Observer answers: "What happened?"
+- Core Signal answers: "What does it mean?"
+- Olivaw answers: "What should I know?"
+
+WeatherSource, CalendarSource, EmailSource, and source aggregation are roadmap
+items only. They are not integrated yet.
 
 ## macOS LaunchAgent
 
@@ -426,7 +463,7 @@ src/olivaw/
   briefing/       Deterministic briefing schemas, composer, and renderer
   capabilities/   Assistant capabilities such as briefing, chat, and health
   providers/      Provider protocol, Ollama, OpenAI, and router
-  sources/        Structured source interface, registry, manual source, and file source
+  sources/        Structured source interface, registry, manual/file/operational sources
   services/       Future service extension points
   cli.py          CLI entrypoint
   config.py       Defaults, TOML, and environment overrides
@@ -481,13 +518,13 @@ grounded Markdown briefing:
 olivaw brief-sources
 ```
 
-It currently uses ManualSource, FileSource, and PrimeObserverSource. The output
-includes source status, source-backed highlights, file previews, a Prime
-Observer section when Prime Observer data is available, source notes, and
-attribution such as:
+It currently uses ManualSource, FileSource, PrimeObserverSource, and
+CoreSignalSource. The output includes source status, source-backed highlights,
+file previews, separate Prime Observer and Core Signal sections when data is
+available, source notes, and attribution such as:
 
 ```text
-This briefing is source-backed using: manual, files, prime_observer.
+This briefing is source-backed using: manual, files, prime_observer, core_signal.
 ```
 
 Source-backed briefings do not require Ollama, OpenAI, embeddings, memory, or a
@@ -504,7 +541,6 @@ Future versions may add:
 - Background scheduling and daily briefing generation
 - Notifications and reminders
 - Project monitoring
-- Core Signal integration
 - Email, calendar, and contact integrations
 - Tool execution and multi-step task planning
 - Always-on assistant service support
@@ -512,8 +548,8 @@ Future versions may add:
 - Desktop automation and computer-use style interactions
 
 These are documented as direction only. v0 does not implement autonomous task
-execution, memory, governance systems, Core Signal integration, or any
-modification of Prime Observer.
+execution, memory, governance-system modification, or any modification of Prime
+Observer or Core Signal.
 
 ## Development
 

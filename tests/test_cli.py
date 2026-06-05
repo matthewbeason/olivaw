@@ -18,6 +18,12 @@ def clear_config_env(monkeypatch):
         "OLIVAW_CLOUD_ENABLED",
         "OLIVAW_CLOUD_MODEL",
         "OLIVAW_CLOUD_FALLBACK",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_FILES_MAX_BYTES",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_PRIME_OBSERVER_ENABLED",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_CORE_SIGNAL_ENABLED",
         "OPENAI_API_KEY",
         "OLIVAW_OPENAI_API_KEY",
     ):
@@ -96,6 +102,7 @@ def test_cli_sources_outputs_registered_sources(capsys):
     assert "Manual example source (manual): ok" in captured.out
     assert "Local files (files):" in captured.out
     assert "Prime Observer (prime_observer):" in captured.out
+    assert "Core Signal (core_signal):" in captured.out
 
 
 def test_cli_brief_sources_outputs_source_backed_briefing(monkeypatch, tmp_path, capsys):

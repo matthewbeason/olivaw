@@ -35,7 +35,7 @@ Keep the first version small: health checks, deterministic briefing, provider ro
 - Olivaw: foundation. Next: Run tests, verify CLI commands, and start the web app.
 
 ## Reminders
-- Do not integrate Prime Observer or Core Signal in v0.
+- Keep Prime Observer and Core Signal read-only as sources.
 - Do not commit secrets or local configuration.
 """
 

@@ -157,8 +157,8 @@ def _source_status_response(config: OlivawConfig) -> AttributedResponse:
     lines.extend(
         [
             "",
-            "Planned sources are not implemented yet: CoreSignalSource, "
-            "WeatherSource, CalendarSource, EmailSource.",
+            "Planned sources are not implemented yet: WeatherSource, "
+            "CalendarSource, EmailSource.",
         ]
     )
     return AttributedResponse(

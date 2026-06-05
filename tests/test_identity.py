@@ -20,6 +20,7 @@ def test_identity_contains_current_implemented_capabilities():
     assert "file inspection" in identity.implemented_capabilities
     assert "source-backed briefing generation" in identity.implemented_capabilities
     assert "PrimeObserverSource" in identity.implemented_capabilities
+    assert "CoreSignalSource" in identity.implemented_capabilities
 
 
 def test_identity_contains_not_yet_implemented_capabilities():
@@ -29,8 +30,6 @@ def test_identity_contains_not_yet_implemented_capabilities():
     assert "calendar integration" in identity.not_yet_implemented_capabilities
     assert "email integration" in identity.not_yet_implemented_capabilities
     assert "weather lookup" in identity.not_yet_implemented_capabilities
-    assert "Core Signal integration" in identity.not_yet_implemented_capabilities
-    assert "CoreSignalSource" in identity.not_yet_implemented_capabilities
     assert "Source aggregation" in identity.not_yet_implemented_capabilities
     assert "desktop automation" in identity.not_yet_implemented_capabilities
 

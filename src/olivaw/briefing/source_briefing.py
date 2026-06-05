@@ -47,6 +47,11 @@ def render_source_briefing(snapshots: list[dict[str, object]]) -> str:
         lines.extend(["", "## Prime Observer"])
         lines.extend(prime_observer_lines)
 
+    core_signal_lines = _core_signal_lines(snapshots)
+    if core_signal_lines:
+        lines.extend(["", "## Core Signal"])
+        lines.extend(core_signal_lines)
+
     lines.extend(["", "## Files"])
     file_lines = _file_lines(snapshots)
     if file_lines:
@@ -162,6 +167,36 @@ def _prime_observer_lines(snapshots: list[dict[str, object]]) -> list[str]:
             status = str(item.get("status") or "unknown")
             summary = _one_line_preview(str(item.get("summary") or "No summary."))
             lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
+            findings = item.get("findings", [])
+            if isinstance(findings, list):
+                for finding in findings[:3]:
+                    lines.append(f"  - {finding}")
+        return lines
+    return []
+
+
+def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
+    for snapshot in snapshots:
+        health = _health(snapshot)
+        if health.source_id != "core_signal":
+            continue
+        if health.status != "ok":
+            return [f"- Status: {health.status} - {health.message}"]
+
+        items = _items(_payload(snapshot))
+        if not items:
+            return ["- Status: ok, no Core Signal items returned."]
+
+        lines: list[str] = []
+        for item in items[:3]:
+            title = str(item.get("title") or "Core Signal report")
+            report_date = str(item.get("report_date") or "unknown date")
+            status = str(item.get("status") or "unknown")
+            summary = _one_line_preview(str(item.get("summary") or "No summary."))
+            lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
+            recommended_action = str(item.get("recommended_action") or "").strip()
+            if recommended_action:
+                lines.append(f"  - Recommended action: {recommended_action}")
             findings = item.get("findings", [])
             if isinstance(findings, list):
                 for finding in findings[:3]:

@@ -86,9 +86,11 @@ def test_sources_route_renders_registered_sources():
     assert "Manual example source" in response.text
     assert "Local files" in response.text
     assert "Prime Observer" in response.text
+    assert "Core Signal" in response.text
     assert "manual" in response.text
     assert "files" in response.text
     assert "prime_observer" in response.text
+    assert "core_signal" in response.text
     assert "Example item" in response.text
     assert "Demonstrates source plumbing." in response.text
 

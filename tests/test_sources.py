@@ -64,6 +64,7 @@ def test_default_registry_contains_manual_and_file_sources(tmp_path):
     assert registry.get_source("manual") is not None
     assert registry.get_source("files") is not None
     assert registry.get_source("prime_observer") is not None
+    assert registry.get_source("core_signal") is not None
 
 
 def test_inspect_sources_returns_status_and_sample_data(tmp_path):
@@ -76,6 +77,7 @@ def test_inspect_sources_returns_status_and_sample_data(tmp_path):
     assert report["sources"][0]["status"] == "ok"
     assert report["sources"][1]["source_id"] == "files"
     assert report["sources"][1]["status"] == "ok"
+    assert report["sources"][3]["source_id"] == "core_signal"
     assert report["data"][0]["items"][0]["title"] == "Example item"
     assert report["data"][1]["count"] == 3
 

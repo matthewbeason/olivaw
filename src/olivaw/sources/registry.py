@@ -4,6 +4,7 @@ from dataclasses import asdict
 
 from olivaw.config import OlivawConfig, load_config
 from olivaw.sources.base import Source, SourceHealth, SourcePayload
+from olivaw.sources.core_signal import CoreSignalSource
 from olivaw.sources.file_source import FileSource
 from olivaw.sources.manual import ManualSource
 from olivaw.sources.prime_observer import PrimeObserverSource
@@ -45,6 +46,12 @@ def create_default_registry(config: OlivawConfig | None = None) -> SourceRegistr
         PrimeObserverSource(
             directory=resolved_config.prime_observer.directory,
             enabled=resolved_config.prime_observer.enabled,
+        )
+    )
+    registry.register(
+        CoreSignalSource(
+            directory=resolved_config.core_signal.directory,
+            enabled=resolved_config.core_signal.enabled,
         )
     )
     return registry

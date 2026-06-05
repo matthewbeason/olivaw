@@ -239,8 +239,9 @@ def test_source_question_is_source_backed_without_provider(monkeypatch, tmp_path
     )
 
     assert result.attribution == SOURCE_BACKED
-    assert result.sources == ("manual", "files", "prime_observer")
+    assert result.sources == ("manual", "files", "prime_observer", "core_signal")
     assert "Manual example source" in result.text
     assert "Local files" in result.text
     assert "Prime Observer" in result.text
+    assert "Core Signal" in result.text
     assert "WeatherSource" in result.text

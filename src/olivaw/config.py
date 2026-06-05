@@ -61,6 +61,12 @@ class PrimeObserverSourceConfig:
 
 
 @dataclass(frozen=True)
+class CoreSignalSourceConfig:
+    directory: Path = field(default_factory=lambda: default_core_signal_path())
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class OlivawConfig:
     local: LocalProviderConfig = field(default_factory=LocalProviderConfig)
     cloud: CloudProviderConfig = field(default_factory=CloudProviderConfig)
@@ -69,6 +75,7 @@ class OlivawConfig:
     prime_observer: PrimeObserverSourceConfig = field(
         default_factory=PrimeObserverSourceConfig
     )
+    core_signal: CoreSignalSourceConfig = field(default_factory=CoreSignalSourceConfig)
     config_path: Path | None = None
     config_file_exists: bool = False
 
@@ -86,6 +93,7 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
     sources_data = data.get("sources", {})
     files_data = sources_data.get("files", {})
     prime_observer_data = sources_data.get("prime_observer", {})
+    core_signal_data = sources_data.get("core_signal", {})
 
     local = LocalProviderConfig(
         type=str(local_data.get("type", "ollama")),
@@ -152,12 +160,26 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         ),
     )
 
+    core_signal = CoreSignalSourceConfig(
+        directory=Path(
+            _env_value(
+                "OLIVAW_CORE_SIGNAL_DIR",
+                core_signal_data.get("directory", default_core_signal_path()),
+            )
+        ).expanduser(),
+        enabled=_bool_from_env(
+            _env_value("OLIVAW_CORE_SIGNAL_ENABLED"),
+            bool(core_signal_data.get("enabled", True)),
+        ),
+    )
+
     return OlivawConfig(
         local=local,
         cloud=cloud,
         policy=policy,
         files=files,
         prime_observer=prime_observer,
+        core_signal=core_signal,
         config_path=config_path,
         config_file_exists=config_file_exists,
     )
@@ -185,6 +207,10 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "prime_observer": {
                 "directory": str(config.prime_observer.directory),
                 "enabled": config.prime_observer.enabled,
+            },
+            "core_signal": {
+                "directory": str(config.core_signal.directory),
+                "enabled": config.core_signal.enabled,
             },
         },
         "config_path": str(config.config_path) if config.config_path else None,
@@ -223,6 +249,8 @@ def format_config_report(config: OlivawConfig) -> str:
             f"- Files max bytes: {config.files.max_bytes}",
             f"- Prime Observer enabled: {'yes' if config.prime_observer.enabled else 'no'}",
             f"- Prime Observer directory: {config.prime_observer.directory}",
+            f"- Core Signal enabled: {'yes' if config.core_signal.enabled else 'no'}",
+            f"- Core Signal directory: {config.core_signal.directory}",
         ]
     )
 
@@ -272,6 +300,10 @@ def default_user_data_path() -> Path:
 
 def default_prime_observer_path() -> Path:
     return Path.home() / "prime-observer" / "viz"
+
+
+def default_core_signal_path() -> Path:
+    return Path.home() / "core-signal" / "reports"
 
 
 def _first_present(*values: object) -> str | None:

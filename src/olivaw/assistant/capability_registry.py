@@ -17,7 +17,6 @@ class CapabilityRegistry:
 
 
 PLANNED_SOURCES = (
-    "CoreSignalSource",
     "WeatherSource",
     "CalendarSource",
     "EmailSource",
@@ -25,7 +24,12 @@ PLANNED_SOURCES = (
 
 
 def create_capability_registry(
-    implemented_sources: tuple[str, ...] = ("manual", "files", "prime_observer"),
+    implemented_sources: tuple[str, ...] = (
+        "manual",
+        "files",
+        "prime_observer",
+        "core_signal",
+    ),
 ) -> CapabilityRegistry:
     identity = get_identity()
     planned_capabilities = tuple(

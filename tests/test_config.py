@@ -23,6 +23,8 @@ def clear_config_env(monkeypatch):
         "OLIVAW_FILES_MAX_BYTES",
         "OLIVAW_PRIME_OBSERVER_DIR",
         "OLIVAW_PRIME_OBSERVER_ENABLED",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_CORE_SIGNAL_ENABLED",
         "OPENAI_API_KEY",
         "OLIVAW_OPENAI_API_KEY",
     ):
@@ -68,6 +70,10 @@ cloud_fallback = "enabled"
 directory = "~/prime-observer/viz"
 enabled = true
 
+[sources.core_signal]
+directory = "~/core-signal/reports"
+enabled = true
+
 [secrets]
 openai_api_key = "config-secret"
 """,
@@ -86,6 +92,8 @@ openai_api_key = "config-secret"
     assert config.policy.cloud_fallback == "enabled"
     assert config.prime_observer.directory == tmp_path / "prime-observer" / "viz"
     assert config.prime_observer.enabled is True
+    assert config.core_signal.directory == tmp_path / "core-signal" / "reports"
+    assert config.core_signal.enabled is True
 
 
 def test_environment_overrides_user_config_values_and_secrets(monkeypatch, tmp_path):
@@ -157,6 +165,10 @@ max_bytes = 2048
 directory = "~/prime-observer/custom"
 enabled = true
 
+[sources.core_signal]
+directory = "~/core-signal/custom"
+enabled = true
+
 [secrets]
 openai_api_key = "config-secret"
 """,
@@ -171,6 +183,8 @@ openai_api_key = "config-secret"
     monkeypatch.setenv("OLIVAW_FILES_MAX_BYTES", "")
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", "")
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_ENABLED", "")
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", "")
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_ENABLED", "")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("OLIVAW_OPENAI_API_KEY", "")
 
@@ -187,6 +201,8 @@ openai_api_key = "config-secret"
     assert config.files.max_bytes == 2048
     assert config.prime_observer.directory == tmp_path / "prime-observer" / "custom"
     assert config.prime_observer.enabled is True
+    assert config.core_signal.directory == tmp_path / "core-signal" / "custom"
+    assert config.core_signal.enabled is True
     assert config.cloud.api_key == "config-secret"
 
 
@@ -235,6 +251,29 @@ enabled = true
 
     assert config.prime_observer.directory == override_dir
     assert config.prime_observer.enabled is False
+
+
+def test_core_signal_environment_overrides_user_config(monkeypatch, tmp_path):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = default_user_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[sources.core_signal]
+directory = "~/core-signal/reports"
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    override_dir = tmp_path / "custom-core-signal"
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(override_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_ENABLED", "false")
+
+    config = load_config()
+
+    assert config.core_signal.directory == override_dir
+    assert config.core_signal.enabled is False
 
 
 def test_openai_api_key_environment_is_supported(monkeypatch, tmp_path):

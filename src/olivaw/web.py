@@ -137,7 +137,7 @@ def _example_briefing() -> str:
                 )
             ],
             reminders=[
-                "Do not integrate Prime Observer or Core Signal in v0.1.",
+                "Keep Prime Observer and Core Signal read-only as sources.",
                 "Do not implement memory or background automation yet.",
             ],
         )
