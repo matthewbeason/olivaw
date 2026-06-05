@@ -44,7 +44,7 @@ def chat_page(request: Request):
 
 @app.post("/chat", response_class=HTMLResponse)
 def chat_submit(request: Request, prompt: str = Form(...)):
-    response = ChatCapability().run(prompt)
+    response = ChatCapability().run_with_attribution(prompt).text
     return templates.TemplateResponse(
         request,
         "chat.html",

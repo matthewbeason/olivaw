@@ -225,6 +225,12 @@ friendly message that no weather source is configured instead of asking a model
 to guess. Questions like "Explain local-first architecture" still route to the
 configured model provider as model-reasoned responses.
 
+Model providers are not tools. OpenAI or Ollama can produce text, but they do
+not give Olivaw live weather, web search, calendar, email, news, sports, or
+stock-price access. Until a source such as WeatherSource exists, both CLI chat
+and web chat should answer weather requests with a capability-unavailable
+message.
+
 The current source-backed chat paths are intentionally small: capability
 questions and source availability questions can be answered from Olivaw's own
 metadata. Source-backed answers can cite registered sources such as

@@ -8,6 +8,7 @@ from olivaw.web import app
 
 
 client = TestClient(app)
+WEATHER_PROMPT = "Hi could you tell me what the weather is in Phoenix az"
 
 
 @pytest.fixture(autouse=True)
@@ -114,11 +115,17 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
 
 
 def test_chat_post_renders_chat_response(monkeypatch):
-    def fake_run(self, prompt, config=None):
-        assert prompt == "hello"
-        return "mocked OpenAI-capable chat response"
+    class FakeResponse:
+        text = "mocked OpenAI-capable chat response"
 
-    monkeypatch.setattr("olivaw.web.ChatCapability.run", fake_run)
+    def fake_run_with_attribution(self, prompt, config=None):
+        assert prompt == "hello"
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        fake_run_with_attribution,
+    )
 
     response = client.post("/chat", data={"prompt": "hello"})
 
@@ -141,6 +148,26 @@ def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
     assert response.status_code == 200
     assert "do not currently have a weather source configured" in response.text
     assert "WeatherSource" in response.text
+
+
+def test_chat_post_exact_weather_request_matches_cli_guardrails(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request):
+            raise AssertionError("weather request should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    response = client.post("/chat", data={"prompt": WEATHER_PROMPT})
+
+    assert response.status_code == 200
+    assert "do not currently have a weather source configured" in response.text
+    assert "WeatherSource" in response.text
+    assert "enable_openai_weather" not in response.text
+    assert "provide weather via cloud OpenAI provider support" not in response.text
+    assert "OpenAI can retrieve live weather" not in response.text
 
 
 def test_settings_does_not_expose_secret(monkeypatch):

@@ -20,6 +20,14 @@ class CustomProviderError(Exception):
     pass
 
 
+WEATHER_PROMPT = "Hi could you tell me what the weather is in Phoenix az"
+FORBIDDEN_WEATHER_CLAIMS = (
+    "enable_openai_weather",
+    "provide weather via cloud openai provider support",
+    "openai can retrieve live weather",
+)
+
+
 @pytest.mark.parametrize(
     "failure",
     [
@@ -149,6 +157,30 @@ def test_weather_request_is_capability_unavailable_without_provider(monkeypatch)
     assert result.capability == "weather source"
     assert "do not currently have a weather source configured" in result.text
     assert "WeatherSource" in result.text
+
+
+def test_exact_weather_request_is_guarded_without_provider(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("weather request should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        WEATHER_PROMPT,
+        config=OlivawConfig(),
+    )
+
+    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.capability == "weather source"
+    assert "do not currently have a weather source configured" in result.text
+    assert "WeatherSource" in result.text
+    normalized = result.text.lower()
+    for forbidden in FORBIDDEN_WEATHER_CLAIMS:
+        assert forbidden not in normalized
 
 
 def test_capability_question_returns_grounded_answer_without_provider(monkeypatch):
