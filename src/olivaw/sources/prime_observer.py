@@ -248,8 +248,14 @@ def _nextdns_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
     summary = _dict(data.get("summary"))
     status = str(data.get("status") or "unknown")
     block_rate = summary.get("block_rate_pct")
+    block_rate_fraction = summary.get("dns_block_rate")
     encrypted_rate = summary.get("encrypted_rate_pct")
+    encrypted_rate_fraction = summary.get("dns_encrypted_rate")
     top_entities = summary.get("top_entities")
+    top_queried_domain = _domain_value(
+        summary.get("top_queried_domain"),
+        summary.get("top_queried_domains"),
+    ) or _top_entity_value(top_entities)
     top_blocked_domain = _domain_value(
         summary.get("top_blocked_domain"),
         summary.get("top_blocked_domains"),
@@ -263,11 +269,17 @@ def _nextdns_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
         summary.get("top_allowed_domains"),
     )
     top_entity = _top_entity_value(top_entities)
+    top_blocked_category = _first_present(
+        summary.get("top_blocked_category"),
+        summary.get("top_blocked_reason"),
+    )
     findings = []
     if block_rate is not None:
         findings.append(f"Block rate: {block_rate}%")
     if encrypted_rate is not None:
         findings.append(f"Encrypted query rate: {encrypted_rate}%")
+    if top_queried_domain:
+        findings.append(f"Top queried domain: {top_queried_domain}")
     if top_blocked_domain:
         findings.append(f"Top blocked domain: {top_blocked_domain}")
     if top_resolved_domain:
@@ -282,11 +294,32 @@ def _nextdns_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
         status=status,
         dns_total_queries=summary.get("total_queries"),
         dns_blocked_queries=summary.get("blocked_queries"),
+        blocked_query_count=summary.get("blocked_query_count")
+        or summary.get("blocked_queries"),
         dns_allowed_queries=summary.get("allowed_queries"),
+        dns_encrypted_queries=summary.get("encrypted_query_count")
+        or summary.get("encrypted_queries"),
         dns_block_rate_pct=block_rate,
+        dns_block_rate=block_rate_fraction,
         dns_encrypted_rate_pct=encrypted_rate,
+        dns_encrypted_rate=encrypted_rate_fraction,
+        top_queried_domain=top_queried_domain or "unavailable",
+        top_queried_domain_count=summary.get("top_queried_domain_count"),
+        top_queried_domain_share=summary.get("top_queried_domain_share"),
         top_blocked_domain=top_blocked_domain or "unavailable",
+        top_blocked_domain_count=summary.get("top_blocked_domain_count"),
+        top_blocked_domain_share=summary.get("top_blocked_domain_share"),
+        top_blocked_domain_share_of_blocked=summary.get(
+            "top_blocked_domain_share_of_blocked"
+        ),
+        top_blocked_category=top_blocked_category or "unavailable",
+        top_blocked_reason_queries=summary.get("top_blocked_reason_queries"),
         top_resolved_domain=top_resolved_domain or "unavailable",
+        top_resolved_domain_count=summary.get("top_resolved_domain_count"),
+        top_resolved_domain_share=summary.get("top_resolved_domain_share"),
+        top_resolved_domain_share_of_resolved=summary.get(
+            "top_resolved_domain_share_of_resolved"
+        ),
         top_domain_entity=top_entity or "unavailable",
         findings=findings,
         report_type="nextdns_summary",
@@ -393,6 +426,13 @@ def _top_entity_value(value: object) -> str | None:
         label = str(first.get("label") or "entity").strip()
         return f"{label} (redacted by Prime Observer privacy settings)"
     return _first_domain(first)
+
+
+def _first_present(*values: object) -> object | None:
+    for value in values:
+        if value:
+            return value
+    return None
 
 
 def _first_text(value: object) -> str | None:

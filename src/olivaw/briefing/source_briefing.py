@@ -216,6 +216,19 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
             if isinstance(findings, list):
                 for finding in findings[:3]:
                     lines.append(f"  - {finding}")
+            dns_findings = item.get("dns_findings", [])
+            if isinstance(dns_findings, list):
+                for finding in dns_findings[:3]:
+                    lines.append(f"  - DNS interpretation: {finding}")
+            dns_status = str(item.get("dns_status") or "").strip()
+            if dns_status:
+                lines.append(f"  - DNS status: {dns_status}")
+            dns_meaning = str(item.get("dns_meaning") or "").strip()
+            if dns_meaning:
+                lines.append(f"  - DNS meaning: {dns_meaning}")
+            dns_action = str(item.get("dns_recommended_action") or "").strip()
+            if dns_action:
+                lines.append(f"  - DNS recommended action: {dns_action}")
         return lines
     return []
 
@@ -265,18 +278,40 @@ def _prime_dns_lines(item: dict[str, object]) -> list[str]:
         lines.append(f"  - Blocked queries: {blocked}")
     if allowed is not None:
         lines.append(f"  - Allowed queries: {allowed}")
+    encrypted = item.get("dns_encrypted_queries")
+    if encrypted is not None:
+        lines.append(f"  - Encrypted queries: {encrypted}")
     if block_rate is not None:
         lines.append(f"  - Block rate: {block_rate}%")
+    raw_block_rate = item.get("dns_block_rate")
+    if raw_block_rate is not None:
+        lines.append(f"  - Raw block rate: {raw_block_rate}")
     if encrypted_rate is not None:
         lines.append(f"  - Encrypted query rate: {encrypted_rate}%")
+    raw_encrypted_rate = item.get("dns_encrypted_rate")
+    if raw_encrypted_rate is not None:
+        lines.append(f"  - Raw encrypted query rate: {raw_encrypted_rate}")
     lines.append(
-        f"  - Top blocked domain: {_domain_display(item.get('top_blocked_domain'))}"
+        "  - Top queried domain: "
+        f"{_domain_display(item.get('top_queried_domain'))}"
+        f"{_count_share(item, 'top_queried_domain')}"
     )
     lines.append(
-        f"  - Top resolved domain: {_domain_display(item.get('top_resolved_domain'))}"
+        "  - Top blocked domain: "
+        f"{_domain_display(item.get('top_blocked_domain'))}"
+        f"{_count_share(item, 'top_blocked_domain')}"
     )
+    lines.append(
+        "  - Top resolved domain: "
+        f"{_domain_display(item.get('top_resolved_domain'))}"
+        f"{_count_share(item, 'top_resolved_domain')}"
+    )
+    top_blocked_category = _domain_display(item.get("top_blocked_category"))
+    if top_blocked_category != "unavailable":
+        lines.append(f"  - Top blocked category/reason: {top_blocked_category}")
+    top_queried = _domain_display(item.get("top_queried_domain"))
     top_entity = _domain_display(item.get("top_domain_entity"))
-    if top_entity != "unavailable":
+    if top_entity != "unavailable" and top_queried == "unavailable":
         lines.append(f"  - Top domain/entity: {top_entity}")
     return lines
 
@@ -326,3 +361,16 @@ def _domain_display(value: object) -> str:
     if not text or text.lower() in {"none", "null", "unavailable"}:
         return "unavailable"
     return text
+
+
+def _count_share(item: dict[str, object], prefix: str) -> str:
+    parts: list[str] = []
+    count = item.get(f"{prefix}_count")
+    if count is not None:
+        parts.append(f"count {count}")
+    share = item.get(f"{prefix}_share")
+    if share is not None:
+        parts.append(f"share {share}")
+    if not parts:
+        return ""
+    return f" ({', '.join(parts)})"

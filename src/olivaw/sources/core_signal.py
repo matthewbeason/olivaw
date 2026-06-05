@@ -153,6 +153,13 @@ class CoreSignalSource:
             or data.get("findings")
             or data.get("worth_knowing")
         )
+        dns_findings = _coerce_findings(
+            data.get("dns_findings")
+            or data.get("dns_interpretation")
+            or data.get("dns_summary")
+            or _dict(data.get("dns")).get("findings")
+            or _dict(data.get("dns")).get("interpretation")
+        )
         return _base_item(
             path=path,
             title=title,
@@ -162,6 +169,21 @@ class CoreSignalSource:
             status_reason=status_reason,
             recommended_action=recommended_action,
             findings=findings,
+            dns_status=_first_present(
+                data.get("dns_status"),
+                _dict(data.get("dns")).get("status"),
+            ),
+            dns_meaning=_first_present(
+                data.get("dns_meaning"),
+                data.get("dns_interpretation"),
+                _dict(data.get("dns")).get("meaning"),
+                _dict(data.get("dns")).get("interpretation"),
+            ),
+            dns_recommended_action=_first_present(
+                data.get("dns_recommended_action"),
+                _dict(data.get("dns")).get("recommended_action"),
+            ),
+            dns_findings=dns_findings,
             preview=summary,
             report_type="json",
         )
@@ -177,6 +199,7 @@ class CoreSignalSource:
             sections, "Recommendation"
         )
         findings = _worth_knowing(sections) or _pattern_titles(text)
+        dns_findings = _dns_findings(text, sections)
         report_type = (
             "pattern_report"
             if "pattern" in path.name.lower() or "Pattern Report" in title
@@ -191,6 +214,7 @@ class CoreSignalSource:
             status_reason=status_reason,
             recommended_action=recommended_action,
             findings=findings,
+            dns_findings=dns_findings,
             preview=_preview(text),
             report_type=report_type,
         )
@@ -208,8 +232,9 @@ def _base_item(
     findings: list[str] | None = None,
     preview: str | None = None,
     report_type: str,
+    **extra: object,
 ) -> dict[str, object]:
-    return {
+    item = {
         "title": title,
         "summary": summary,
         "path": path.name,
@@ -221,6 +246,8 @@ def _base_item(
         "preview": preview or summary,
         "report_type": report_type,
     }
+    item.update(extra)
+    return item
 
 
 def _title(text: str, path: Path) -> str:
@@ -275,6 +302,42 @@ def _pattern_titles(text: str) -> list[str]:
         if line.startswith("### "):
             titles.append(line.removeprefix("### ").strip())
     return titles[:5]
+
+
+def _dns_findings(text: str, sections: dict[str, list[str]]) -> list[str]:
+    findings: list[str] = []
+    for section_name in ("Worth knowing", "Concentration Signals"):
+        for line in sections.get(section_name, []):
+            cleaned = line.removeprefix("- ").removeprefix("### ").strip()
+            if cleaned and _is_dns_related(cleaned):
+                findings.append(cleaned)
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("### ") and _is_dns_related(stripped):
+            findings.append(stripped.removeprefix("### ").strip())
+
+    deduped: list[str] = []
+    for finding in findings:
+        if finding not in deduped:
+            deduped.append(finding)
+    return deduped[:5]
+
+
+def _is_dns_related(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        term in lowered
+        for term in (
+            "dns",
+            "domain",
+            "quer",
+            "resolved",
+            "block",
+            "encrypt",
+            "concentration",
+        )
+    )
 
 
 def _line_value(text: str, label: str) -> str | None:
@@ -334,6 +397,10 @@ def _modified(path: Path) -> str:
 
 def _mtime(path: Path) -> float:
     return path.stat().st_mtime
+
+
+def _dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _markdown_priority(path: Path) -> int:

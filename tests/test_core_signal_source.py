@@ -53,6 +53,13 @@ def test_core_signal_source_loads_valid_json_report(tmp_path):
   "summary": "Performance was slower than usual.",
   "status_reason": "The network differed from historical norms.",
   "recommended_action": "No action unless people noticed issues.",
+  "dns_status": "normal",
+  "dns_interpretation": "DNS filtering looked normal.",
+  "dns_recommended_action": "No DNS action needed.",
+  "dns_findings": [
+    "Block rate remained within the expected range.",
+    "Encrypted DNS usage was steady."
+  ],
   "noteworthy_findings": [
     "Performance was slower than usual.",
     "DNS filtering looked normal."
@@ -73,6 +80,11 @@ def test_core_signal_source_loads_valid_json_report(tmp_path):
     assert item["summary"] == "Performance was slower than usual."
     assert item["status_reason"] == "The network differed from historical norms."
     assert item["recommended_action"] == "No action unless people noticed issues."
+    assert item["dns_status"] == "normal"
+    assert item["dns_meaning"] == "DNS filtering looked normal."
+    assert item["dns_recommended_action"] == "No DNS action needed."
+    assert "Block rate remained within the expected range." in item["dns_findings"]
+    assert "Encrypted DNS usage was steady." in item["dns_findings"]
     assert "DNS filtering looked normal." in item["findings"]
 
 
@@ -92,6 +104,7 @@ def test_core_signal_source_loads_markdown_morning_brief(tmp_path):
     )
     assert item["recommended_action"] == "No action unless people noticed issues."
     assert "Performance was slower than usual." in item["findings"]
+    assert item["dns_findings"] == ["DNS filtering looked normal."]
     assert item["report_type"] == "morning_brief"
 
 
@@ -109,6 +122,7 @@ def test_core_signal_source_loads_markdown_pattern_report(tmp_path):
     assert item["report_type"] == "pattern_report"
     assert "7 observed pattern candidates" in item["summary"]
     assert "Business-hour WAN elevation" in item["findings"]
+    assert "Concentration: OISD block reason" in item["dns_findings"]
 
 
 def test_core_signal_source_prefers_latest_markdown_per_category(tmp_path):
@@ -191,6 +205,7 @@ def test_source_briefing_keeps_prime_observer_and_core_signal_semantics_separate
     assert "DNS summary: available from Prime Observer." in prime_section
     assert "DNS filtering looked normal" not in prime_section
     assert "DNS filtering looked normal" in core_section
+    assert "DNS interpretation: DNS filtering looked normal." in core_section
     assert "Why/status reasoning:" in core_section
     assert "Recommended action:" in core_section
 
@@ -226,6 +241,13 @@ The afternoon ramp showed elevated latency.
 ### Business-hour WAN elevation
 
 Weekday business hours showed higher WAN latency than other windows.
+
+## Concentration Signals
+
+### Concentration: OISD block reason
+
+- Entity type: Blocked DNS reason
+- OISD represented 95.7% of available blocked-reason activity.
 """
 
 
