@@ -63,6 +63,7 @@ def test_default_registry_contains_manual_and_file_sources(tmp_path):
 
     assert registry.get_source("manual") is not None
     assert registry.get_source("files") is not None
+    assert registry.get_source("prime_observer") is not None
 
 
 def test_inspect_sources_returns_status_and_sample_data(tmp_path):

@@ -30,6 +30,7 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "file inspection",
         "source-aware response attribution",
         "source-backed briefing generation",
+        "PrimeObserverSource",
     ),
     not_yet_implemented_capabilities=(
         "persistent memory",
@@ -38,9 +39,7 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "notifications/reminders",
         "weather lookup",
         "local business lookup",
-        "Prime Observer integration",
         "Core Signal integration",
-        "PrimeObserverSource",
         "CoreSignalSource",
         "WeatherSource",
         "CalendarSource",

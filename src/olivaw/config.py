@@ -55,11 +55,20 @@ class FileSourceConfig:
 
 
 @dataclass(frozen=True)
+class PrimeObserverSourceConfig:
+    directory: Path = field(default_factory=lambda: default_prime_observer_path())
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class OlivawConfig:
     local: LocalProviderConfig = field(default_factory=LocalProviderConfig)
     cloud: CloudProviderConfig = field(default_factory=CloudProviderConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     files: FileSourceConfig = field(default_factory=FileSourceConfig)
+    prime_observer: PrimeObserverSourceConfig = field(
+        default_factory=PrimeObserverSourceConfig
+    )
     config_path: Path | None = None
     config_file_exists: bool = False
 
@@ -76,6 +85,7 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
     secrets_data = data.get("secrets", {})
     sources_data = data.get("sources", {})
     files_data = sources_data.get("files", {})
+    prime_observer_data = sources_data.get("prime_observer", {})
 
     local = LocalProviderConfig(
         type=str(local_data.get("type", "ollama")),
@@ -129,11 +139,25 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         ),
     )
 
+    prime_observer = PrimeObserverSourceConfig(
+        directory=Path(
+            _env_value(
+                "OLIVAW_PRIME_OBSERVER_DIR",
+                prime_observer_data.get("directory", default_prime_observer_path()),
+            )
+        ).expanduser(),
+        enabled=_bool_from_env(
+            _env_value("OLIVAW_PRIME_OBSERVER_ENABLED"),
+            bool(prime_observer_data.get("enabled", True)),
+        ),
+    )
+
     return OlivawConfig(
         local=local,
         cloud=cloud,
         policy=policy,
         files=files,
+        prime_observer=prime_observer,
         config_path=config_path,
         config_file_exists=config_file_exists,
     )
@@ -157,7 +181,11 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "files": {
                 "directory": str(config.files.directory),
                 "max_bytes": config.files.max_bytes,
-            }
+            },
+            "prime_observer": {
+                "directory": str(config.prime_observer.directory),
+                "enabled": config.prime_observer.enabled,
+            },
         },
         "config_path": str(config.config_path) if config.config_path else None,
         "config_file_exists": config.config_file_exists,
@@ -193,6 +221,8 @@ def format_config_report(config: OlivawConfig) -> str:
             "Sources:",
             f"- Files directory: {config.files.directory}",
             f"- Files max bytes: {config.files.max_bytes}",
+            f"- Prime Observer enabled: {'yes' if config.prime_observer.enabled else 'no'}",
+            f"- Prime Observer directory: {config.prime_observer.directory}",
         ]
     )
 
@@ -238,6 +268,10 @@ def default_user_config_path() -> Path:
 
 def default_user_data_path() -> Path:
     return Path.home() / "Library" / "Application Support" / "Olivaw" / "data"
+
+
+def default_prime_observer_path() -> Path:
+    return Path.home() / "prime-observer" / "viz"
 
 
 def _first_present(*values: object) -> str | None:

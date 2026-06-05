@@ -1,6 +1,7 @@
 from olivaw.sources.base import Source, SourceHealth, SourcePayload, SourceStatus
 from olivaw.sources.file_source import FileSource
 from olivaw.sources.manual import ManualSource
+from olivaw.sources.prime_observer import PrimeObserverSource
 from olivaw.sources.registry import (
     SourceRegistry,
     create_default_registry,
@@ -10,6 +11,7 @@ from olivaw.sources.registry import (
 __all__ = [
     "ManualSource",
     "FileSource",
+    "PrimeObserverSource",
     "Source",
     "SourceHealth",
     "SourcePayload",

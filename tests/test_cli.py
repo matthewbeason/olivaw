@@ -93,6 +93,7 @@ def test_cli_sources_outputs_registered_sources(capsys):
     assert "Olivaw Sources" in captured.out
     assert "Manual example source (manual): ok" in captured.out
     assert "Local files (files):" in captured.out
+    assert "Prime Observer (prime_observer):" in captured.out
 
 
 def test_cli_brief_sources_outputs_source_backed_briefing(monkeypatch, tmp_path, capsys):

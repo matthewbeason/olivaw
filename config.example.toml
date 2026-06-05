@@ -15,6 +15,10 @@ cloud_fallback = "disabled"
 directory = "~/Library/Application Support/Olivaw/data"
 max_bytes = 1048576
 
+[sources.prime_observer]
+directory = "~/prime-observer/viz"
+enabled = true
+
 [secrets]
 # Replace with a real key in your user config file only:
 # ~/Library/Application Support/Olivaw/config.toml

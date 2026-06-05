@@ -5,6 +5,7 @@ from pathlib import Path
 from olivaw.assistant.attribution import SOURCE_BACKED
 from olivaw.briefing import compose_briefing_from_file, compose_source_briefing
 from olivaw.sources.base import SourceHealth
+from olivaw.sources import FileSource, ManualSource
 from olivaw.sources.registry import SourceRegistry
 
 
@@ -99,11 +100,11 @@ def test_source_backed_briefing_includes_manual_and_file_items(tmp_path):
         "# Welcome\nA source-backed note.\n",
         encoding="utf-8",
     )
-    from olivaw.config import FileSourceConfig, OlivawConfig
+    registry = SourceRegistry()
+    registry.register(ManualSource())
+    registry.register(FileSource(root=tmp_path))
 
-    result = compose_source_briefing(
-        config=OlivawConfig(files=FileSourceConfig(directory=tmp_path))
-    )
+    result = compose_source_briefing(registry=registry)
 
     assert result.sources == ("manual", "files")
     assert "Example item from manual source" in result.text

@@ -12,7 +12,11 @@ def compose_source_briefing(
 ) -> AttributedResponse:
     resolved = registry or create_default_registry(config)
     snapshots = [_source_snapshot(source) for source in resolved.list_sources()]
-    used_sources = tuple(snapshot["health"].source_id for snapshot in snapshots)
+    used_sources = tuple(
+        _health(snapshot).source_id
+        for snapshot in snapshots
+        if _health(snapshot).status == "ok" and _items(_payload(snapshot))
+    )
     return AttributedResponse(
         text=render_source_briefing(snapshots),
         attribution=SOURCE_BACKED,
@@ -38,6 +42,11 @@ def render_source_briefing(snapshots: list[dict[str, object]]) -> str:
     else:
         lines.append("- No source-backed highlights available.")
 
+    prime_observer_lines = _prime_observer_lines(snapshots)
+    if prime_observer_lines:
+        lines.extend(["", "## Prime Observer"])
+        lines.extend(prime_observer_lines)
+
     lines.extend(["", "## Files"])
     file_lines = _file_lines(snapshots)
     if file_lines:
@@ -52,7 +61,11 @@ def render_source_briefing(snapshots: list[dict[str, object]]) -> str:
     else:
         lines.append("- No source notes.")
 
-    used = ", ".join(snapshot["health"].source_id for snapshot in snapshots)
+    used = ", ".join(
+        _health(snapshot).source_id
+        for snapshot in snapshots
+        if _health(snapshot).status == "ok" and _items(_payload(snapshot))
+    )
     if not used:
         used = "none"
     lines.extend(
@@ -130,6 +143,33 @@ def _file_lines(snapshots: list[dict[str, object]]) -> list[str]:
     return lines
 
 
+def _prime_observer_lines(snapshots: list[dict[str, object]]) -> list[str]:
+    for snapshot in snapshots:
+        health = _health(snapshot)
+        if health.source_id != "prime_observer":
+            continue
+        if health.status != "ok":
+            return [f"- Status: {health.status} - {health.message}"]
+
+        items = _items(_payload(snapshot))
+        if not items:
+            return ["- Status: ok, no Prime Observer items returned."]
+
+        lines: list[str] = []
+        for item in items[:3]:
+            title = str(item.get("title") or "Prime Observer report")
+            report_date = str(item.get("report_date") or "unknown date")
+            status = str(item.get("status") or "unknown")
+            summary = _one_line_preview(str(item.get("summary") or "No summary."))
+            lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
+            findings = item.get("findings", [])
+            if isinstance(findings, list):
+                for finding in findings[:3]:
+                    lines.append(f"  - {finding}")
+        return lines
+    return []
+
+
 def _source_note_lines(snapshots: list[dict[str, object]]) -> list[str]:
     lines: list[str] = []
     for snapshot in snapshots:
@@ -168,4 +208,3 @@ def _one_line_preview(text: str) -> str:
     if len(normalized) > 160:
         return normalized[:157].rstrip() + "..."
     return normalized or "No preview."
-

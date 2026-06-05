@@ -40,6 +40,7 @@ Today, Olivaw should describe only these implemented capabilities:
 - File inspection
 - Source-aware response attribution
 - Source-backed briefing generation
+- PrimeObserverSource
 
 These roadmap capabilities are not implemented yet:
 
@@ -49,9 +50,7 @@ These roadmap capabilities are not implemented yet:
 - Notifications/reminders
 - Weather lookup
 - Local business lookup
-- Prime Observer integration
 - Core Signal integration
-- PrimeObserverSource
 - CoreSignalSource
 - WeatherSource
 - CalendarSource
@@ -149,6 +148,10 @@ cloud_fallback = "disabled"
 directory = "~/Library/Application Support/Olivaw/data"
 max_bytes = 1048576
 
+[sources.prime_observer]
+directory = "~/prime-observer/viz"
+enabled = true
+
 [secrets]
 openai_api_key = ""
 ```
@@ -171,6 +174,8 @@ Environment overrides:
 - `OLIVAW_CLOUD_ENABLED`
 - `OLIVAW_CLOUD_MODEL`
 - `OLIVAW_CLOUD_FALLBACK`
+- `OLIVAW_PRIME_OBSERVER_DIR`
+- `OLIVAW_PRIME_OBSERVER_ENABLED`
 - `OPENAI_API_KEY` or `OLIVAW_OPENAI_API_KEY`
 
 Equivalent `.env` values:
@@ -222,9 +227,10 @@ configured model provider as model-reasoned responses.
 
 The current source-backed chat paths are intentionally small: capability
 questions and source availability questions can be answered from Olivaw's own
-metadata. Future source-backed answers can cite sources such as
-PrimeObserverSource, CoreSignalSource, WeatherSource, CalendarSource, and
-EmailSource once those sources exist. They are roadmap items only today.
+metadata. Source-backed answers can cite registered sources such as
+PrimeObserverSource. Future source-backed answers can cite sources such as
+CoreSignalSource, WeatherSource, CalendarSource, and EmailSource once those
+sources exist. Those sources are roadmap items only today.
 
 ## Web UI
 
@@ -264,7 +270,7 @@ Olivaw has a lightweight Sources framework so integrations can expose structured
 information before the project adds memory. A source has an id, display name,
 health status, and `fetch()` method.
 
-v0 includes two local sources:
+v0 includes three local sources:
 
 ```bash
 olivaw init-data
@@ -306,9 +312,33 @@ database. It inspects `.txt`, `.md`, and `.json` files, ignores hidden files,
 ignores unsupported/binary file types, and skips files larger than the configured
 limit, which defaults to 1 MB.
 
-PrimeObserverSource, CoreSignalSource, WeatherSource, CalendarSource,
-EmailSource, and source aggregation are roadmap items only. They are not
-integrated yet.
+PrimeObserverSource reads Prime Observer outputs without modifying Prime
+Observer. Prime Observer remains the system of record; Olivaw consumes and
+presents the facts Prime Observer has already produced.
+
+The default directory is:
+
+```text
+~/prime-observer/viz/
+```
+
+Expected files include:
+
+```text
+viz/
+  latest.csv
+  network_attribution.json
+  nextdns_summary.json
+```
+
+Structured JSON is preferred when available. `network_attribution.json` is used
+for concise network status, attribution, confidence, and evidence. `latest.csv`
+is used as a latest-sample summary. Markdown and text reports are read as short
+previews. Missing directories, empty directories, disabled configuration, and
+malformed files degrade through source health/status instead of crashing.
+
+CoreSignalSource, WeatherSource, CalendarSource, EmailSource, and source
+aggregation are roadmap items only. They are not integrated yet.
 
 ## macOS LaunchAgent
 
@@ -445,12 +475,13 @@ grounded Markdown briefing:
 olivaw brief-sources
 ```
 
-It currently uses ManualSource and FileSource. The output includes source
-status, source-backed highlights, file previews, source notes, and attribution
-such as:
+It currently uses ManualSource, FileSource, and PrimeObserverSource. The output
+includes source status, source-backed highlights, file previews, a Prime
+Observer section when Prime Observer data is available, source notes, and
+attribution such as:
 
 ```text
-This briefing is source-backed using: manual, files.
+This briefing is source-backed using: manual, files, prime_observer.
 ```
 
 Source-backed briefings do not require Ollama, OpenAI, embeddings, memory, or a
@@ -467,7 +498,6 @@ Future versions may add:
 - Background scheduling and daily briefing generation
 - Notifications and reminders
 - Project monitoring
-- Prime Observer integration
 - Core Signal integration
 - Email, calendar, and contact integrations
 - Tool execution and multi-step task planning
@@ -476,8 +506,8 @@ Future versions may add:
 - Desktop automation and computer-use style interactions
 
 These are documented as direction only. v0 does not implement autonomous task
-execution, memory, governance systems, Prime Observer, or Core Signal
-integration.
+execution, memory, governance systems, Core Signal integration, or any
+modification of Prime Observer.
 
 ## Development
 
