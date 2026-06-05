@@ -58,17 +58,142 @@ def briefing_page(request: Request):
     config = load_config()
     briefing = compose_source_briefing(config=config)
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    dashboard = _briefing_dashboard(briefing.text, generated_at, briefing.sources)
     response = templates.TemplateResponse(
         request,
         "briefing.html",
         {
             "briefing": briefing,
+            "dashboard": dashboard,
             "generated_at": generated_at,
             "config": public_config(config),
         },
     )
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def _briefing_dashboard(
+    text: str,
+    generated_at: str,
+    sources: tuple[str, ...],
+) -> dict[str, object]:
+    sections = _markdown_sections(text)
+    core_lines = sections.get("Core Signal", [])
+    prime_lines = sections.get("Prime Observer", [])
+    highlights = sections.get("Highlights", [])
+    source_lines = [
+        *sections.get("Sources", []),
+        *sections.get("Source Notes", []),
+        *sections.get("Attribution", []),
+    ]
+
+    status = _overall_status(core_lines)
+    worth = _important_lines(
+        core_lines,
+        include=("worth", "slower", "normal", "noticed", "detected", "performance"),
+        exclude=("recommended action", "why/status", "dns interpretation"),
+        fallback=highlights,
+        limit=3,
+    )
+    recommended = _first_matching(core_lines, "Recommended action") or (
+        "No specific recommendation is available from Core Signal."
+    )
+    network = _important_lines(
+        prime_lines,
+        include=("lan/wan", "current status", "confidence", "latest sample", "p95"),
+        exclude=("dns",),
+        limit=5,
+    )
+    dns = _important_lines(
+        [*prime_lines, *core_lines],
+        include=("dns", "query", "domain", "block", "encrypted"),
+        exclude=("available from prime observer",),
+        limit=6,
+    )
+    core = _important_lines(
+        core_lines,
+        include=("why/status", "performance", "concentration", "weekday", "window"),
+        exclude=("dns interpretation", "recommended action"),
+        limit=5,
+    )
+
+    return {
+        "status": status,
+        "generated_at": generated_at,
+        "sources": sources,
+        "worth_knowing": worth,
+        "recommended_action": recommended,
+        "network_status": network,
+        "dns_activity": dns,
+        "core_signal_findings": core,
+        "source_details": source_lines,
+    }
+
+
+def _markdown_sections(text: str) -> dict[str, list[str]]:
+    sections: dict[str, list[str]] = {}
+    current = ""
+    for line in text.splitlines():
+        if line.startswith("## "):
+            current = line.removeprefix("## ").strip()
+            sections.setdefault(current, [])
+            continue
+        if current and line.strip():
+            sections[current].append(line.strip())
+    return sections
+
+
+def _overall_status(lines: list[str]) -> str:
+    for line in lines:
+        if "[" in line and "]" in line:
+            return line.split("[", 1)[1].split("]", 1)[0].strip()
+    return "Source-backed"
+
+
+def _important_lines(
+    lines: list[str],
+    *,
+    include: tuple[str, ...],
+    exclude: tuple[str, ...] = (),
+    fallback: list[str] | None = None,
+    limit: int,
+) -> list[str]:
+    selected = [
+        _clean_briefing_line(line)
+        for line in lines
+        if _matches(line, include=include, exclude=exclude)
+    ]
+    if not selected and fallback:
+        selected = [_clean_briefing_line(line) for line in fallback]
+
+    deduped: list[str] = []
+    for line in selected:
+        if line and line not in deduped:
+            deduped.append(line)
+    return deduped[:limit]
+
+
+def _first_matching(lines: list[str], label: str) -> str | None:
+    lowered = label.lower()
+    for line in lines:
+        if lowered in line.lower():
+            return _clean_briefing_line(line)
+    return None
+
+
+def _matches(line: str, *, include: tuple[str, ...], exclude: tuple[str, ...]) -> bool:
+    lowered = line.lower()
+    return any(term in lowered for term in include) and not any(
+        term in lowered for term in exclude
+    )
+
+
+def _clean_briefing_line(line: str) -> str:
+    cleaned = line.strip()
+    while cleaned.startswith("-"):
+        cleaned = cleaned[1:].strip()
+    return cleaned
 
 
 @app.get("/health", response_class=HTMLResponse)

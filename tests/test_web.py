@@ -112,11 +112,18 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
-    assert "Source Briefing" in response.text
+    assert "Today at a glance" in response.text
     assert "source-backed" in response.text
     assert "Generated" in response.text
     assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", response.text)
     assert "Refresh briefing" in response.text
+    assert "Overall Status" in response.text
+    assert "Worth Knowing" in response.text
+    assert "Recommended Action" in response.text
+    assert "Network Status" in response.text
+    assert "DNS Activity" in response.text
+    assert "Core Signal Findings" in response.text
+    assert "Show raw briefing" in response.text
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
     assert "File found: status/system.txt" in response.text

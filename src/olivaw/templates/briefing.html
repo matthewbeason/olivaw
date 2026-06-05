@@ -1,21 +1,111 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>Source Briefing</h1>
-  <p>Deterministic briefing generated from registered sources.</p>
-  <form method="get" action="/briefing">
-    <button type="submit">Refresh briefing</button>
-  </form>
+  <section class="briefing-hero">
+    <div>
+      <p class="eyebrow">Source-backed briefing</p>
+      <h1>Today at a glance</h1>
+      <p class="lede">
+        A current, local-first summary from Olivaw's registered sources.
+      </p>
+    </div>
+    <form method="get" action="/briefing">
+      <button type="submit">Refresh briefing</button>
+    </form>
+  </section>
 
-  <section class="card">
-    <h2>Attribution</h2>
-    <dl>
-      <dt>Generated</dt><dd>{{ generated_at }}</dd>
-      <dt>State</dt><dd>{{ briefing.attribution.value }}</dd>
-      <dt>Sources</dt><dd>{{ briefing.sources | join(", ") }}</dd>
-      <dt>Config path</dt><dd>{{ config.config_path or "defaults only" }}</dd>
+  <section class="summary-card">
+    <div>
+      <span class="status-pill">{{ dashboard.status }}</span>
+      <h2>Overall Status</h2>
+    </div>
+    <dl class="summary-meta">
+      <div>
+        <dt>Generated</dt>
+        <dd>{{ dashboard.generated_at }}</dd>
+      </div>
+      <div>
+        <dt>Sources Used</dt>
+        <dd>{{ dashboard.sources | join(", ") }}</dd>
+      </div>
+      <div>
+        <dt>Attribution</dt>
+        <dd>{{ briefing.attribution.value }}</dd>
+      </div>
     </dl>
   </section>
 
-  <h2>Briefing</h2>
-  <pre>{{ briefing.text }}</pre>
+  <section class="briefing-grid" aria-label="Briefing highlights">
+    <article class="briefing-card accent-green">
+      <p class="card-label">Worth Knowing</p>
+      <h2>Important signals</h2>
+      <ul class="clean-list">
+        {% for item in dashboard.worth_knowing %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li>No source-backed highlights are available.</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="briefing-card accent-blue">
+      <p class="card-label">Recommended Action</p>
+      <h2>What to do next</h2>
+      <p class="card-copy">{{ dashboard.recommended_action }}</p>
+    </article>
+
+    <article class="briefing-card accent-teal">
+      <p class="card-label">Network Status</p>
+      <h2>Current state</h2>
+      <ul class="clean-list">
+        {% for item in dashboard.network_status %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li>Network status is unavailable from registered sources.</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="briefing-card accent-orange">
+      <p class="card-label">DNS Activity</p>
+      <h2>Recent DNS facts</h2>
+      <ul class="clean-list">
+        {% for item in dashboard.dns_activity %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li>DNS activity is unavailable from registered sources.</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="briefing-card accent-purple">
+      <p class="card-label">Core Signal Findings</p>
+      <h2>Interpretation</h2>
+      <ul class="clean-list">
+        {% for item in dashboard.core_signal_findings %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li>No Core Signal interpretation is available.</li>
+        {% endfor %}
+      </ul>
+    </article>
+  </section>
+
+  <section class="details-stack">
+    <details class="disclosure-card">
+      <summary>Source details</summary>
+      <dl class="detail-list">
+        <dt>Config path</dt>
+        <dd>{{ config.config_path or "defaults only" }}</dd>
+        {% for item in dashboard.source_details %}
+          <dt>Source note</dt>
+          <dd>{{ item }}</dd>
+        {% endfor %}
+      </dl>
+    </details>
+
+    <details class="disclosure-card">
+      <summary>Show raw briefing</summary>
+      <pre>{{ briefing.text }}</pre>
+    </details>
+  </section>
 {% endblock %}
