@@ -28,6 +28,7 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "read-only configuration display",
         "source inspection",
         "file inspection",
+        "source-aware response attribution",
     ),
     not_yet_implemented_capabilities=(
         "persistent memory",
@@ -40,6 +41,9 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "Core Signal integration",
         "PrimeObserverSource",
         "CoreSignalSource",
+        "WeatherSource",
+        "CalendarSource",
+        "EmailSource",
         "Source aggregation",
         "Briefing from sources",
         "autonomous background tasks",

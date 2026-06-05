@@ -103,6 +103,23 @@ def test_chat_post_renders_chat_response(monkeypatch):
     assert "mocked OpenAI-capable chat response" in response.text
 
 
+def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request):
+            raise AssertionError("weather request should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    response = client.post("/chat", data={"prompt": "What's the weather in Phoenix?"})
+
+    assert response.status_code == 200
+    assert "do not currently have a weather source configured" in response.text
+    assert "WeatherSource" in response.text
+
+
 def test_settings_does_not_expose_secret(monkeypatch):
     monkeypatch.setenv("OLIVAW_OPENAI_API_KEY", "very-secret")
 

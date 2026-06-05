@@ -26,8 +26,9 @@ def build_chat_system_prompt(identity: AssistantIdentity | None = None) -> str:
             "- Do not claim unavailable capabilities.",
             '- Say "not implemented yet" when asked about missing features.',
             "- Distinguish current capability from roadmap capability.",
+            "- Distinguish source-backed facts from model reasoning.",
+            "- Do not imply access to sources or tools unless Olivaw supplied them.",
             "- Avoid speculation about your own implementation.",
             "- Say when you are uncertain.",
         ]
     )
-
