@@ -462,6 +462,22 @@ Logs are written to:
 /Users/mbeason/Library/Logs/olivaw-error.log
 ```
 
+Troubleshooting briefing freshness:
+
+- Source data updates should appear automatically on the next `/briefing`
+  request. The web route reloads configuration, fetches registered sources, and
+  regenerates the source-backed briefing for each page load. Use the page's
+  "Refresh briefing" button or reload the browser tab; the page shows the UTC
+  generation time for that request.
+- Code, template, dependency, or configuration-loading changes require
+  restarting the running web process. If Olivaw is running under launchd, rerun
+  `scripts/install_launch_agent.sh` or kickstart the service after deploying
+  code changes:
+
+  ```bash
+  launchctl kickstart -k gui/$UID/com.beason.olivaw
+  ```
+
 This launchd support is the first deployment step toward future always-on
 assistant behavior: a persistent local web surface that can later host recurring
 tasks, memory, notifications, and integrations when those capabilities are

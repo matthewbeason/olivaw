@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -109,11 +111,40 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     response = client.get("/briefing")
 
     assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
     assert "Source Briefing" in response.text
     assert "source-backed" in response.text
+    assert "Generated" in response.text
+    assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", response.text)
+    assert "Refresh briefing" in response.text
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
     assert "File found: status/system.txt" in response.text
+
+
+def test_briefing_route_reflects_changed_source_data_between_requests(
+    monkeypatch,
+    tmp_path,
+):
+    for name in ("OLIVAW_CONFIG", "OLIVAW_FILES_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_path = tmp_path / "Library" / "Application Support" / "Olivaw" / "data"
+    data_path.mkdir(parents=True)
+    source_file = data_path / "status.txt"
+    source_file.write_text("Version one\n", encoding="utf-8")
+
+    first = client.get("/briefing")
+
+    source_file.write_text("Version two\n", encoding="utf-8")
+    second = client.get("/briefing")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "Version one" in first.text
+    assert "Version two" in second.text
+    assert "Version one" not in second.text
+    assert "This briefing is source-backed using: manual, files." in second.text
 
 
 def test_chat_post_renders_chat_response(monkeypatch):

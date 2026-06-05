@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form
@@ -54,12 +55,20 @@ def chat_submit(request: Request, prompt: str = Form(...)):
 
 @app.get("/briefing", response_class=HTMLResponse)
 def briefing_page(request: Request):
-    briefing = compose_source_briefing(config=load_config())
-    return templates.TemplateResponse(
+    config = load_config()
+    briefing = compose_source_briefing(config=config)
+    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    response = templates.TemplateResponse(
         request,
         "briefing.html",
-        {"briefing": briefing},
+        {
+            "briefing": briefing,
+            "generated_at": generated_at,
+            "config": public_config(config),
+        },
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/health", response_class=HTMLResponse)
