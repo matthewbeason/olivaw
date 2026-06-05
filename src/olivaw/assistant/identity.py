@@ -29,6 +29,7 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "source inspection",
         "file inspection",
         "source-aware response attribution",
+        "source-backed briefing generation",
     ),
     not_yet_implemented_capabilities=(
         "persistent memory",
@@ -45,7 +46,6 @@ OLIVAW_IDENTITY = AssistantIdentity(
         "CalendarSource",
         "EmailSource",
         "Source aggregation",
-        "Briefing from sources",
         "autonomous background tasks",
         "tool execution",
         "desktop automation",

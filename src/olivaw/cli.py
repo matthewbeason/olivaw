@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from olivaw.briefing import compose_briefing_from_file
+from olivaw.briefing import compose_briefing_from_file, compose_source_briefing
 from olivaw.config import ConfigError, format_config_report, load_config
 from olivaw.health import format_health_report, run_health_checks
 
@@ -24,6 +24,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         help="Path to a structured daily context JSON file.",
+    )
+
+    brief_sources = subparsers.add_parser(
+        "brief-sources",
+        help="Generate a deterministic source-backed briefing.",
+    )
+    brief_sources.add_argument(
+        "--format",
+        choices=("markdown",),
+        default="markdown",
+        help="Output format. Only markdown is currently supported.",
     )
 
     chat = subparsers.add_parser("chat", help="Run placeholder provider-routed chat.")
@@ -52,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "brief":
             print(compose_briefing_from_file(args.input), end="")
+            return 0
+
+        if args.command == "brief-sources":
+            print(compose_source_briefing().text, end="")
             return 0
 
         if args.command == "chat":

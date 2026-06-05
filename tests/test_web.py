@@ -90,6 +90,27 @@ def test_sources_route_renders_registered_sources():
     assert "Demonstrates source plumbing." in response.text
 
 
+def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
+    for name in ("OLIVAW_CONFIG", "OLIVAW_FILES_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_path = tmp_path / "Library" / "Application Support" / "Olivaw" / "data"
+    (data_path / "status").mkdir(parents=True)
+    (data_path / "status" / "system.txt").write_text(
+        "System status\nAll local.\n",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Source Briefing" in response.text
+    assert "source-backed" in response.text
+    assert "manual, files" in response.text
+    assert "Example item from manual source" in response.text
+    assert "File found: status/system.txt" in response.text
+
+
 def test_chat_post_renders_chat_response(monkeypatch):
     def fake_run(self, prompt, config=None):
         assert prompt == "hello"

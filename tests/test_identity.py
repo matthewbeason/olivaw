@@ -18,6 +18,7 @@ def test_identity_contains_current_implemented_capabilities():
     assert "read-only configuration display" in identity.implemented_capabilities
     assert "source inspection" in identity.implemented_capabilities
     assert "file inspection" in identity.implemented_capabilities
+    assert "source-backed briefing generation" in identity.implemented_capabilities
 
 
 def test_identity_contains_not_yet_implemented_capabilities():
@@ -32,7 +33,6 @@ def test_identity_contains_not_yet_implemented_capabilities():
     assert "PrimeObserverSource" in identity.not_yet_implemented_capabilities
     assert "CoreSignalSource" in identity.not_yet_implemented_capabilities
     assert "Source aggregation" in identity.not_yet_implemented_capabilities
-    assert "Briefing from sources" in identity.not_yet_implemented_capabilities
     assert "desktop automation" in identity.not_yet_implemented_capabilities
 
 
@@ -43,6 +43,7 @@ def test_capabilities_summary_separates_current_from_roadmap():
     assert "deterministic briefing generation" in implemented
     assert "source inspection" in implemented
     assert "file inspection" in implemented
+    assert "source-backed briefing generation" in implemented
     assert "calendar integration" not in implemented
     assert "weather lookup" not in implemented
     assert "calendar integration" in not_implemented

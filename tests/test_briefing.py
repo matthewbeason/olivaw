@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from olivaw.briefing import compose_briefing_from_file
+from olivaw.assistant.attribution import SOURCE_BACKED
+from olivaw.briefing import compose_briefing_from_file, compose_source_briefing
+from olivaw.sources.base import SourceHealth
+from olivaw.sources.registry import SourceRegistry
 
 
 def test_briefing_golden_output():
@@ -35,3 +38,97 @@ Keep the first version small: health checks, deterministic briefing, provider ro
 - Do not commit secrets or local configuration.
 """
 
+
+class FakeSource:
+    source_id = "fake"
+    display_name = "Fake source"
+
+    def health(self):
+        return SourceHealth(
+            source_id=self.source_id,
+            display_name=self.display_name,
+            status="ok",
+            message="Fake source is available.",
+        )
+
+    def fetch(self):
+        return {
+            "source": self.source_id,
+            "status": "ok",
+            "items": [
+                {"title": "Fake item", "summary": "Useful source-backed fact."}
+            ],
+        }
+
+
+class EmptySource(FakeSource):
+    source_id = "empty"
+    display_name = "Empty source"
+
+    def fetch(self):
+        return {"source": self.source_id, "status": "ok", "items": []}
+
+
+class FailedSource(FakeSource):
+    source_id = "failed"
+    display_name = "Failed source"
+
+    def fetch(self):
+        raise RuntimeError("source unavailable")
+
+
+def test_source_backed_briefing_generation_includes_attribution():
+    registry = SourceRegistry()
+    registry.register(FakeSource())
+
+    result = compose_source_briefing(registry=registry)
+
+    assert result.attribution == SOURCE_BACKED
+    assert result.sources == ("fake",)
+    assert result.capability == "source-backed briefing"
+    assert "# Source Briefing" in result.text
+    assert "## Sources" in result.text
+    assert "- fake: ok (Fake source) - Fake source is available." in result.text
+    assert "Fake item from fake source: Useful source-backed fact." in result.text
+    assert "This briefing is source-backed using: fake." in result.text
+
+
+def test_source_backed_briefing_includes_manual_and_file_items(tmp_path):
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "welcome.md").write_text(
+        "# Welcome\nA source-backed note.\n",
+        encoding="utf-8",
+    )
+    from olivaw.config import FileSourceConfig, OlivawConfig
+
+    result = compose_source_briefing(
+        config=OlivawConfig(files=FileSourceConfig(directory=tmp_path))
+    )
+
+    assert result.sources == ("manual", "files")
+    assert "Example item from manual source" in result.text
+    assert "File found: notes/welcome.md" in result.text
+    assert "- notes/welcome.md - # Welcome A source-backed note." in result.text
+    assert "This briefing is source-backed using: manual, files." in result.text
+
+
+def test_source_backed_briefing_handles_empty_sources():
+    registry = SourceRegistry()
+    registry.register(EmptySource())
+
+    result = compose_source_briefing(registry=registry)
+
+    assert result.attribution == SOURCE_BACKED
+    assert "empty has no items." in result.text
+    assert "empty: ok, no items returned." in result.text
+
+
+def test_source_backed_briefing_handles_failed_sources():
+    registry = SourceRegistry()
+    registry.register(FailedSource())
+
+    result = compose_source_briefing(registry=registry)
+
+    assert result.attribution == SOURCE_BACKED
+    assert "- failed: error (Failed source) - Fetch failed: RuntimeError: source unavailable" in result.text
+    assert "failed unavailable: Fetch failed: RuntimeError: source unavailable" in result.text

@@ -95,6 +95,48 @@ def test_cli_sources_outputs_registered_sources(capsys):
     assert "Local files (files):" in captured.out
 
 
+def test_cli_brief_sources_outputs_source_backed_briefing(monkeypatch, tmp_path, capsys):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data_path = tmp_path / "Library" / "Application Support" / "Olivaw" / "data"
+    (data_path / "notes").mkdir(parents=True)
+    (data_path / "notes" / "welcome.md").write_text(
+        "# Welcome\nSource note.\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["brief-sources"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "# Source Briefing" in captured.out
+    assert "- manual: ok" in captured.out
+    assert "- files: ok" in captured.out
+    assert "Example item from manual source" in captured.out
+    assert "File found: notes/welcome.md" in captured.out
+    assert "This briefing is source-backed using: manual, files." in captured.out
+
+
+def test_cli_brief_sources_accepts_markdown_format(monkeypatch, tmp_path, capsys):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    exit_code = main(["brief-sources", "--format", "markdown"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "# Source Briefing" in captured.out
+
+
+def test_cli_brief_input_still_outputs_fixture_briefing(capsys):
+    exit_code = main(["brief", "--input", "examples/daily_context.json"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "# Daily Briefing" in captured.out
+    assert "Stabilize Olivaw v0 as a local-first assistant foundation." in captured.out
+
+
 def test_cli_init_config_creates_config_once(monkeypatch, tmp_path, capsys):
     clear_config_env(monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))

@@ -39,6 +39,7 @@ Today, Olivaw should describe only these implemented capabilities:
 - Source inspection
 - File inspection
 - Source-aware response attribution
+- Source-backed briefing generation
 
 These roadmap capabilities are not implemented yet:
 
@@ -56,7 +57,6 @@ These roadmap capabilities are not implemented yet:
 - CalendarSource
 - EmailSource
 - Source aggregation
-- Briefing from sources
 - Autonomous background tasks
 - Tool execution
 - Desktop automation
@@ -187,6 +187,7 @@ OLIVAW_CLOUD_FALLBACK=disabled
 ```bash
 olivaw health
 olivaw brief --input examples/daily_context.json
+olivaw brief-sources
 olivaw chat
 olivaw sources
 olivaw config
@@ -231,6 +232,7 @@ The web UI uses FastAPI and Jinja templates. Routes:
 
 - `/` shows assistant status, selected provider, and an example briefing.
 - `/chat` provides a minimal placeholder chat surface.
+- `/briefing` shows a deterministic source-backed briefing.
 - `/sources` shows registered sources, source status, and example source data.
 - `/capabilities` shows implemented capabilities, roadmap capabilities, and
   operating principles.
@@ -305,8 +307,8 @@ ignores unsupported/binary file types, and skips files larger than the configure
 limit, which defaults to 1 MB.
 
 PrimeObserverSource, CoreSignalSource, WeatherSource, CalendarSource,
-EmailSource, source aggregation, and briefing from sources are roadmap items
-only. They are not integrated yet.
+EmailSource, and source aggregation are roadmap items only. They are not
+integrated yet.
 
 ## macOS LaunchAgent
 
@@ -388,7 +390,7 @@ src/olivaw/
   briefing/       Deterministic briefing schemas, composer, and renderer
   capabilities/   Assistant capabilities such as briefing, chat, and health
   providers/      Provider protocol, Ollama, OpenAI, and router
-  sources/        Structured source interface, registry, and manual source
+  sources/        Structured source interface, registry, manual source, and file source
   services/       Future service extension points
   cli.py          CLI entrypoint
   config.py       Defaults, TOML, and environment overrides
@@ -426,9 +428,36 @@ cloud fallback is explicitly enabled.
 
 ## Briefing Capability
 
-The briefing capability reads structured JSON and renders deterministic
-Markdown. It does not require an LLM. This makes the first capability reliable
-in offline tests while leaving room for future model-assisted composition.
+Olivaw has two deterministic briefing paths.
+
+The fixture briefing path reads structured JSON and renders Markdown:
+
+```bash
+olivaw brief --input examples/daily_context.json
+```
+
+This path is useful for fixtures, tests, and known daily context payloads.
+
+The source-backed briefing path fetches registered sources and renders a
+grounded Markdown briefing:
+
+```bash
+olivaw brief-sources
+```
+
+It currently uses ManualSource and FileSource. The output includes source
+status, source-backed highlights, file previews, source notes, and attribution
+such as:
+
+```text
+This briefing is source-backed using: manual, files.
+```
+
+Source-backed briefings do not require Ollama, OpenAI, embeddings, memory, or a
+vector database. They are deterministic because they only transform current
+source payloads into Markdown. Future versions may add optional model-enhanced
+synthesis on top of source-backed facts, but the source attribution contract
+should remain visible internally.
 
 ## Roadmap
 

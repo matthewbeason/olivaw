@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-from olivaw.briefing import compose_briefing
+from olivaw.briefing import compose_briefing, compose_source_briefing
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.capabilities.sources import SourceInspectionCapability
@@ -49,6 +49,16 @@ def chat_submit(request: Request, prompt: str = Form(...)):
         request,
         "chat.html",
         {"response": response, "prompt": prompt},
+    )
+
+
+@app.get("/briefing", response_class=HTMLResponse)
+def briefing_page(request: Request):
+    briefing = compose_source_briefing(config=load_config())
+    return templates.TemplateResponse(
+        request,
+        "briefing.html",
+        {"briefing": briefing},
     )
 
 
