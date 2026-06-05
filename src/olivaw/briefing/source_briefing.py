@@ -125,6 +125,20 @@ def _highlight_lines(snapshots: list[dict[str, object]]) -> list[str]:
             if health.source_id == "files":
                 path = str(item.get("path") or item.get("title") or "unknown file")
                 lines.append(f"- File found: {path}")
+            elif health.source_id == "prime_observer":
+                report_type = str(item.get("report_type") or "")
+                if report_type == "network_attribution":
+                    current = str(item.get("current_label") or item.get("summary") or "").strip()
+                    lines.append(f"- Prime Observer current network state: {current}")
+                elif report_type == "nextdns_summary":
+                    lines.append("- Prime Observer DNS summary is available.")
+                elif report_type == "csv":
+                    timestamp = str(
+                        item.get("latest_sample_timestamp")
+                        or item.get("report_date")
+                        or "unknown time"
+                    )
+                    lines.append(f"- Prime Observer latest sample: {timestamp}")
             else:
                 title = str(item.get("title") or "Untitled item")
                 summary = str(item.get("summary") or item.get("preview") or "").strip()
@@ -160,17 +174,15 @@ def _prime_observer_lines(snapshots: list[dict[str, object]]) -> list[str]:
         if not items:
             return ["- Status: ok, no Prime Observer items returned."]
 
-        lines: list[str] = []
-        for item in items[:3]:
-            title = str(item.get("title") or "Prime Observer report")
-            report_date = str(item.get("report_date") or "unknown date")
-            status = str(item.get("status") or "unknown")
-            summary = _one_line_preview(str(item.get("summary") or "No summary."))
-            lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
-            findings = item.get("findings", [])
-            if isinstance(findings, list):
-                for finding in findings[:3]:
-                    lines.append(f"  - {finding}")
+        lines = ["- Current-state observations only; interpretation belongs to Core Signal."]
+        for item in items:
+            report_type = str(item.get("report_type") or "")
+            if report_type == "network_attribution":
+                lines.extend(_prime_network_lines(item))
+            elif report_type == "csv":
+                lines.extend(_prime_latest_sample_lines(item))
+            elif report_type == "nextdns_summary":
+                lines.extend(_prime_dns_lines(item))
         return lines
     return []
 
@@ -194,6 +206,9 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
             status = str(item.get("status") or "unknown")
             summary = _one_line_preview(str(item.get("summary") or "No summary."))
             lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
+            status_reason = str(item.get("status_reason") or "").strip()
+            if status_reason:
+                lines.append(f"  - Why/status reasoning: {status_reason}")
             recommended_action = str(item.get("recommended_action") or "").strip()
             if recommended_action:
                 lines.append(f"  - Recommended action: {recommended_action}")
@@ -203,6 +218,67 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
                     lines.append(f"  - {finding}")
         return lines
     return []
+
+
+def _prime_network_lines(item: dict[str, object]) -> list[str]:
+    report_date = str(item.get("report_date") or "unknown time")
+    current = str(item.get("current_label") or item.get("summary") or "unknown").strip()
+    status = str(item.get("current_status") or item.get("status") or "unknown")
+    confidence = str(item.get("current_confidence") or "unknown")
+    lines = [
+        f"- Network attribution generated at {report_date}.",
+        f"  - Current LAN/WAN state: {current}",
+        f"  - Current status: {status}",
+        f"  - Confidence: {confidence}",
+    ]
+    window = str(item.get("window_label") or "").strip()
+    if window:
+        lines.append(f"  - Latest window state: {window}")
+    return lines
+
+
+def _prime_latest_sample_lines(item: dict[str, object]) -> list[str]:
+    timestamp = str(
+        item.get("latest_sample_timestamp") or item.get("report_date") or "unknown time"
+    )
+    phase = str(item.get("latest_sample_phase") or "unknown phase")
+    host = str(item.get("latest_sample_host") or "unknown host")
+    p95 = str(item.get("latest_sample_p95_ms") or "unknown")
+    loss = str(item.get("latest_sample_loss_pct") or "unknown")
+    return [
+        f"- Latest sample timestamp: {timestamp}",
+        f"  - Phase/target: {phase} to {host}",
+        f"  - Raw p95/loss: {p95} ms, {loss}%",
+    ]
+
+
+def _prime_dns_lines(item: dict[str, object]) -> list[str]:
+    lines = ["- DNS summary: available from Prime Observer."]
+    total = item.get("dns_total_queries")
+    blocked = item.get("dns_blocked_queries")
+    allowed = item.get("dns_allowed_queries")
+    block_rate = item.get("dns_block_rate_pct")
+    encrypted_rate = item.get("dns_encrypted_rate_pct")
+    if total is not None:
+        lines.append(f"  - Total queries: {total}")
+    if blocked is not None:
+        lines.append(f"  - Blocked queries: {blocked}")
+    if allowed is not None:
+        lines.append(f"  - Allowed queries: {allowed}")
+    if block_rate is not None:
+        lines.append(f"  - Block rate: {block_rate}%")
+    if encrypted_rate is not None:
+        lines.append(f"  - Encrypted query rate: {encrypted_rate}%")
+    lines.append(
+        f"  - Top blocked domain: {_domain_display(item.get('top_blocked_domain'))}"
+    )
+    lines.append(
+        f"  - Top resolved domain: {_domain_display(item.get('top_resolved_domain'))}"
+    )
+    top_entity = _domain_display(item.get("top_domain_entity"))
+    if top_entity != "unavailable":
+        lines.append(f"  - Top domain/entity: {top_entity}")
+    return lines
 
 
 def _source_note_lines(snapshots: list[dict[str, object]]) -> list[str]:
@@ -243,3 +319,10 @@ def _one_line_preview(text: str) -> str:
     if len(normalized) > 160:
         return normalized[:157].rstrip() + "..."
     return normalized or "No preview."
+
+
+def _domain_display(value: object) -> str:
+    text = str(value or "").strip()
+    if not text or text.lower() in {"none", "null", "unavailable"}:
+        return "unavailable"
+    return text

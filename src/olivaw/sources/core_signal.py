@@ -137,6 +137,12 @@ class CoreSignalSource:
             or status
             or "Core Signal report is available."
         )
+        status_reason = _first_present(
+            data.get("status_reason"),
+            data.get("why_status"),
+            data.get("reason"),
+            data.get("reasoning"),
+        )
         recommended_action = _first_present(
             data.get("recommended_action"),
             data.get("recommendation"),
@@ -153,6 +159,7 @@ class CoreSignalSource:
             summary=summary,
             report_date=str(data.get("date") or data.get("generated_at") or _modified(path)),
             status=status,
+            status_reason=status_reason,
             recommended_action=recommended_action,
             findings=findings,
             preview=summary,
@@ -165,6 +172,7 @@ class CoreSignalSource:
         sections = _sections(text)
         status = _line_value(text, "Status") or "unknown"
         summary = _summary(text, sections)
+        status_reason = _section_text(sections, "Why This Status")
         recommended_action = _line_value(text, "Recommended Action") or _section_text(
             sections, "Recommendation"
         )
@@ -180,6 +188,7 @@ class CoreSignalSource:
             summary=summary,
             report_date=_date_from_text(title, path) or _modified(path),
             status=status,
+            status_reason=status_reason,
             recommended_action=recommended_action,
             findings=findings,
             preview=_preview(text),
@@ -194,6 +203,7 @@ def _base_item(
     summary: str,
     report_date: str,
     status: str,
+    status_reason: str | None = None,
     recommended_action: str | None = None,
     findings: list[str] | None = None,
     preview: str | None = None,
@@ -205,6 +215,7 @@ def _base_item(
         "path": path.name,
         "report_date": report_date,
         "status": status,
+        "status_reason": status_reason or "",
         "recommended_action": recommended_action or "",
         "findings": findings or [],
         "preview": preview or summary,
@@ -276,10 +287,21 @@ def _line_value(text: str, label: str) -> str | None:
 
 
 def _section_text(sections: dict[str, list[str]], name: str) -> str | None:
-    lines = [line for line in sections.get(name, []) if line and not line.startswith("- ")]
+    lines = [
+        line
+        for line in sections.get(name, [])
+        if line
+        and not line.startswith("- ")
+        and not _looks_like_inline_label(line)
+    ]
     if not lines:
         return None
     return " ".join(lines).strip()
+
+
+def _looks_like_inline_label(line: str) -> bool:
+    label, separator, _value = line.partition(":")
+    return bool(separator and label and len(label.split()) <= 4)
 
 
 def _coerce_findings(value: object) -> list[str]:

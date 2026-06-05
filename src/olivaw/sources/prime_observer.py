@@ -177,6 +177,11 @@ class PrimeObserverSource:
             ),
             report_date=ts,
             status="ok",
+            latest_sample_timestamp=ts,
+            latest_sample_phase=phase,
+            latest_sample_host=host,
+            latest_sample_p95_ms=p95,
+            latest_sample_loss_pct=loss,
             findings=[f"{len(rows)} sample row(s) in {path.name}."],
             report_type="csv",
         )
@@ -226,6 +231,14 @@ def _network_attribution_item(path: Path, data: dict[str, Any]) -> dict[str, obj
         summary=summary,
         report_date=str(data.get("generated_at") or _modified(path)),
         status=status,
+        current_status=status,
+        current_label=str(
+            current.get("label")
+            or data.get("attribution_label")
+            or status
+        ),
+        current_confidence=confidence,
+        window_label=str(window.get("label") or window.get("status") or ""),
         findings=findings,
         report_type="network_attribution",
     )
@@ -237,22 +250,44 @@ def _nextdns_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
     block_rate = summary.get("block_rate_pct")
     encrypted_rate = summary.get("encrypted_rate_pct")
     top_entities = summary.get("top_entities")
+    top_blocked_domain = _domain_value(
+        summary.get("top_blocked_domain"),
+        summary.get("top_blocked_domains"),
+        summary.get("top_blocked"),
+    )
+    top_resolved_domain = _domain_value(
+        summary.get("top_resolved_domain"),
+        summary.get("top_resolved_domains"),
+        summary.get("top_resolved"),
+        summary.get("top_allowed_domain"),
+        summary.get("top_allowed_domains"),
+    )
+    top_entity = _top_entity_value(top_entities)
     findings = []
     if block_rate is not None:
         findings.append(f"Block rate: {block_rate}%")
     if encrypted_rate is not None:
         findings.append(f"Encrypted query rate: {encrypted_rate}%")
-    if isinstance(top_entities, list) and top_entities:
-        first = _dict(top_entities[0])
-        label = first.get("label") or "top entity"
-        share = first.get("share_of_total")
-        findings.append(f"Top redacted entity: {label} ({share} share)")
+    if top_blocked_domain:
+        findings.append(f"Top blocked domain: {top_blocked_domain}")
+    if top_resolved_domain:
+        findings.append(f"Top resolved domain: {top_resolved_domain}")
+    if top_entity and not top_blocked_domain and not top_resolved_domain:
+        findings.append(f"Top domain/entity: {top_entity}")
     return _base_item(
         path=path,
         title="Prime Observer NextDNS summary",
         summary="NextDNS summary is available from Prime Observer.",
         report_date=str(data.get("generated_at") or _modified(path)),
         status=status,
+        dns_total_queries=summary.get("total_queries"),
+        dns_blocked_queries=summary.get("blocked_queries"),
+        dns_allowed_queries=summary.get("allowed_queries"),
+        dns_block_rate_pct=block_rate,
+        dns_encrypted_rate_pct=encrypted_rate,
+        top_blocked_domain=top_blocked_domain or "unavailable",
+        top_resolved_domain=top_resolved_domain or "unavailable",
+        top_domain_entity=top_entity or "unavailable",
         findings=findings,
         report_type="nextdns_summary",
     )
@@ -286,8 +321,9 @@ def _base_item(
     findings: list[str] | None = None,
     preview: str | None = None,
     report_type: str,
+    **extra: object,
 ) -> dict[str, object]:
-    return {
+    item = {
         "title": title,
         "summary": summary,
         "path": path.name,
@@ -297,6 +333,8 @@ def _base_item(
         "preview": preview or summary,
         "report_type": report_type,
     }
+    item.update(extra)
+    return item
 
 
 def _preview(path: Path) -> str:
@@ -314,6 +352,47 @@ def _mtime(path: Path) -> float:
 
 def _dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _domain_value(*values: object) -> str | None:
+    for value in values:
+        candidate = _first_domain(value)
+        if candidate:
+            return candidate
+    return None
+
+
+def _first_domain(value: object) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    if isinstance(value, dict):
+        if value.get("name_redacted") is True:
+            label = str(value.get("label") or "domain").strip()
+            return f"{label} (redacted)"
+        for key in ("domain", "name", "label", "host"):
+            text = str(value.get(key) or "").strip()
+            if text:
+                return text
+        return None
+    if isinstance(value, list):
+        for item in value:
+            candidate = _first_domain(item)
+            if candidate:
+                return candidate
+    return None
+
+
+def _top_entity_value(value: object) -> str | None:
+    if not isinstance(value, list) or not value:
+        return None
+    first = _dict(value[0])
+    if not first:
+        return None
+    if first.get("name_redacted") is True:
+        label = str(first.get("label") or "entity").strip()
+        return f"{label} (redacted by Prime Observer privacy settings)"
+    return _first_domain(first)
 
 
 def _first_text(value: object) -> str | None:

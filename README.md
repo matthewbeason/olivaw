@@ -324,8 +324,9 @@ ignores unsupported/binary file types, and skips files larger than the configure
 limit, which defaults to 1 MB.
 
 PrimeObserverSource reads Prime Observer outputs without modifying Prime
-Observer. Prime Observer remains the system of record; Olivaw consumes and
-presents the facts Prime Observer has already produced.
+Observer. Prime Observer remains the system of record for current and
+near-real-time observed state; Olivaw consumes and presents those facts without
+adding interpretation.
 
 The default directory is:
 
@@ -343,10 +344,14 @@ viz/
 ```
 
 Structured JSON is preferred when available. `network_attribution.json` is used
-for concise network status, attribution, confidence, and evidence. `latest.csv`
-is used as a latest-sample summary. Markdown and text reports are read as short
-previews. Missing directories, empty directories, disabled configuration, and
-malformed files degrade through source health/status instead of crashing.
+for current LAN/WAN state and attribution status. `latest.csv` is used for the
+latest sample timestamp and raw p95/loss facts. `nextdns_summary.json` is used
+for DNS summary availability and raw DNS counts, plus top blocked/resolved
+domains when Prime Observer exports them. Redacted DNS entities are labeled as
+redacted; Olivaw does not treat `entity_1`-style placeholders as meaningful
+briefing facts. Markdown and text reports are read as short previews. Missing
+directories, empty directories, disabled configuration, and malformed files
+degrade through source health/status instead of crashing.
 
 CoreSignalSource reads Core Signal outputs without modifying Core Signal. Core
 Signal remains the authoritative interpretation layer; Olivaw consumes and
@@ -369,16 +374,23 @@ reports/
 ```
 
 Structured JSON is preferred when available. Markdown morning briefs are used
-for status, summary, recommended action, and "Worth knowing" findings. Pattern
-reports are read as concise interpretation summaries and noteworthy pattern
-titles. Missing directories, empty directories, disabled configuration, and
-malformed files degrade through source health/status instead of crashing.
+for status, status reasoning, recommended action, and "Worth knowing" findings,
+including DNS interpretation when Core Signal provides it. Pattern reports are
+read as concise interpretation summaries and noteworthy pattern titles. Missing
+directories, empty directories, disabled configuration, and malformed files
+degrade through source health/status instead of crashing.
 
 Prime Observer and Core Signal stay separate:
 
 - Prime Observer answers: "What happened?"
 - Core Signal answers: "What does it mean?"
 - Olivaw answers: "What should I know?"
+
+Source-backed briefings preserve that separation. The Prime Observer section is
+current-state focused: latest sample timestamp, current LAN/WAN state, current
+network attribution/status, DNS summary availability, and raw DNS facts. The
+Core Signal section owns status reasoning, recommendations, worth-knowing
+interpretation, trends, patterns, and DNS interpretation.
 
 WeatherSource, CalendarSource, EmailSource, and source aggregation are roadmap
 items only. They are not integrated yet.
@@ -520,8 +532,8 @@ olivaw brief-sources
 
 It currently uses ManualSource, FileSource, PrimeObserverSource, and
 CoreSignalSource. The output includes source status, source-backed highlights,
-file previews, separate Prime Observer and Core Signal sections when data is
-available, source notes, and attribution such as:
+file previews, a current-state Prime Observer section, an interpretation-focused
+Core Signal section, source notes, and attribution such as:
 
 ```text
 This briefing is source-backed using: manual, files, prime_observer, core_signal.

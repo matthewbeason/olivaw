@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from olivaw.briefing import compose_source_briefing
 from olivaw.config import CoreSignalSourceConfig, OlivawConfig
-from olivaw.sources import CoreSignalSource
+from olivaw.sources import CoreSignalSource, PrimeObserverSource
 from olivaw.sources.registry import SourceRegistry, create_default_registry
 
 
@@ -51,6 +51,7 @@ def test_core_signal_source_loads_valid_json_report(tmp_path):
   "date": "2026-06-05",
   "status": "Watch",
   "summary": "Performance was slower than usual.",
+  "status_reason": "The network differed from historical norms.",
   "recommended_action": "No action unless people noticed issues.",
   "noteworthy_findings": [
     "Performance was slower than usual.",
@@ -70,6 +71,7 @@ def test_core_signal_source_loads_valid_json_report(tmp_path):
     assert item["title"] == "Core Signal Summary"
     assert item["status"] == "Watch"
     assert item["summary"] == "Performance was slower than usual."
+    assert item["status_reason"] == "The network differed from historical norms."
     assert item["recommended_action"] == "No action unless people noticed issues."
     assert "DNS filtering looked normal." in item["findings"]
 
@@ -85,6 +87,9 @@ def test_core_signal_source_loads_markdown_morning_brief(tmp_path):
     assert item["report_date"] == "2026-06-05"
     assert item["status"] == "Watch"
     assert item["summary"] == "Performance was unusually slow compared with normal."
+    assert item["status_reason"] == (
+        "Performance differed from historical norms but was not actionable."
+    )
     assert item["recommended_action"] == "No action unless people noticed issues."
     assert "Performance was slower than usual." in item["findings"]
     assert item["report_type"] == "morning_brief"
@@ -158,8 +163,36 @@ def test_source_briefing_includes_core_signal_section(tmp_path):
 
     assert "## Core Signal" in briefing.text
     assert "Core Signal Morning Brief" in briefing.text
+    assert (
+        "Why/status reasoning: Performance differed from historical norms but was not actionable."
+        in briefing.text
+    )
     assert "Recommended action: No action unless people noticed issues." in briefing.text
     assert "This briefing is source-backed using: core_signal." in briefing.text
+
+
+def test_source_briefing_keeps_prime_observer_and_core_signal_semantics_separate(
+    tmp_path,
+):
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    _write_prime_nextdns_summary(prime_dir / "nextdns_summary.json")
+    (core_dir / "latest.md").write_text(_morning_brief(), encoding="utf-8")
+    registry = SourceRegistry()
+    registry.register(PrimeObserverSource(directory=prime_dir))
+    registry.register(CoreSignalSource(directory=core_dir))
+
+    briefing = compose_source_briefing(registry=registry)
+    prime_section = _section(briefing.text, "## Prime Observer")
+    core_section = _section(briefing.text, "## Core Signal")
+
+    assert "DNS summary: available from Prime Observer." in prime_section
+    assert "DNS filtering looked normal" not in prime_section
+    assert "DNS filtering looked normal" in core_section
+    assert "Why/status reasoning:" in core_section
+    assert "Recommended action:" in core_section
 
 
 def _morning_brief() -> str:
@@ -194,3 +227,39 @@ The afternoon ramp showed elevated latency.
 
 Weekday business hours showed higher WAN latency than other windows.
 """
+
+
+def _write_prime_nextdns_summary(path):
+    path.write_text(
+        """
+{
+  "generated_at": "2026-06-04T21:05:00Z",
+  "status": "ok",
+  "summary": {
+    "total_queries": 1000,
+    "blocked_queries": 20,
+    "allowed_queries": 900,
+    "block_rate_pct": 2.0,
+    "encrypted_rate_pct": 80.0,
+    "top_entities": [
+      {
+        "label": "entity_1",
+        "count": 250,
+        "share_of_total": 0.25,
+        "name_redacted": true
+      }
+    ]
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+
+def _section(text: str, heading: str) -> str:
+    start = text.index(heading)
+    rest = text[start + len(heading):]
+    next_heading = rest.find("\n## ")
+    if next_heading == -1:
+        return rest
+    return rest[:next_heading]
