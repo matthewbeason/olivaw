@@ -162,11 +162,25 @@
         display: inline-flex;
         align-items: center;
         border-radius: 999px;
-        background: rgba(52, 199, 89, 0.14);
-        color: #0f6b2f;
         font-size: 14px;
         font-weight: 750;
         padding: 5px 11px;
+      }
+      .status-healthy {
+        background: rgba(52, 199, 89, 0.14);
+        color: #0f6b2f;
+      }
+      .status-watch {
+        background: rgba(255, 149, 0, 0.16);
+        color: #8a4b00;
+      }
+      .status-action {
+        background: rgba(194, 65, 12, 0.13);
+        color: var(--warn);
+      }
+      .status-explanation {
+        max-width: 420px;
+        margin: 8px 0 0;
       }
       .summary-meta {
         display: grid;
@@ -215,6 +229,16 @@
       .accent-teal::before { background: var(--teal); }
       .accent-orange::before { background: var(--orange); }
       .accent-purple::before { background: var(--purple); }
+      .category-chip {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        margin-bottom: 14px;
+        padding: 4px 9px;
+      }
       .clean-list {
         display: grid;
         gap: 10px;

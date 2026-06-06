@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from olivaw.models import HealthReport, ProviderStatus
-from olivaw.web import app
+from olivaw.web import _dashboard_status, app
 
 
 client = TestClient(app)
@@ -118,11 +118,18 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", response.text)
     assert "Refresh briefing" in response.text
     assert "Overall Status" in response.text
+    assert "Healthy" in response.text
+    assert "Sources do not report a condition needing attention." in response.text
     assert "Worth Knowing" in response.text
     assert "Recommended Action" in response.text
     assert "Network Status" in response.text
     assert "DNS Activity" in response.text
     assert "Core Signal Findings" in response.text
+    assert "Category: context" in response.text
+    assert "Category: action" in response.text
+    assert "Category: network" in response.text
+    assert "Category: DNS" in response.text
+    assert "Category: interpretation" in response.text
     assert "Show raw briefing" in response.text
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
@@ -152,6 +159,59 @@ def test_briefing_route_reflects_changed_source_data_between_requests(
     assert "Version two" in second.text
     assert "Version one" not in second.text
     assert "This briefing is source-backed using: manual, files." in second.text
+
+
+def test_dashboard_status_maps_no_action_watch_to_healthy():
+    core_lines = [
+        "- Core Signal Morning Brief - 2026-06-05 (2026-06-05) [Watch]: "
+        "Performance was unusually slow compared with the normal pattern.",
+        "- Why/status reasoning: Performance was noticeably different from "
+        "historical norms, but it was not actionable because no sustained "
+        "instability or user-impacting issue was detected.",
+        "- Recommended action: No action unless people noticed slow calls.",
+        "- DNS filtering looked normal: 2.4% of queries were blocked.",
+    ]
+    prime_lines = [
+        "- Network attribution generated at 2026-06-05T23:18:43+00:00.",
+        "- Current LAN/WAN state: No network issue detected",
+        "- Current status: no_issue_detected",
+    ]
+
+    status = _dashboard_status(core_lines, prime_lines)
+
+    assert status["label"] == "Healthy"
+    assert status["tone"] == "healthy"
+    assert "No action is recommended" in status["explanation"]
+
+
+def test_dashboard_status_keeps_watch_when_monitoring_is_warranted():
+    core_lines = [
+        "- Core Signal Morning Brief - 2026-06-05 (2026-06-05) [Watch]: "
+        "Recurring latency should be watched.",
+        "- Why/status reasoning: Confidence: medium; worth monitoring.",
+        "- Recommended action: Monitor the next weekly report.",
+    ]
+
+    status = _dashboard_status(core_lines, [])
+
+    assert status["label"] == "Watch"
+    assert status["tone"] == "watch"
+    assert "worth monitoring" in status["explanation"]
+
+
+def test_dashboard_status_marks_action_needed_for_actionable_recommendation():
+    core_lines = [
+        "- Core Signal Morning Brief - 2026-06-05 (2026-06-05) [Attention]: "
+        "Sustained slowdown detected.",
+        "- Why/status reasoning: A sustained slowdown was detected.",
+        "- Recommended action: Restart the router and recheck the connection.",
+    ]
+
+    status = _dashboard_status(core_lines, [])
+
+    assert status["label"] == "Action Needed"
+    assert status["tone"] == "action"
+    assert "needs attention" in status["explanation"]
 
 
 def test_chat_post_renders_chat_response(monkeypatch):

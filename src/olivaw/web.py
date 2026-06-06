@@ -88,7 +88,7 @@ def _briefing_dashboard(
         *sections.get("Attribution", []),
     ]
 
-    status = _overall_status(core_lines)
+    status = _dashboard_status(core_lines, prime_lines)
     worth = _important_lines(
         core_lines,
         include=("worth", "slower", "normal", "noticed", "detected", "performance"),
@@ -120,6 +120,9 @@ def _briefing_dashboard(
 
     return {
         "status": status,
+        "status_label": status["label"],
+        "status_tone": status["tone"],
+        "status_explanation": status["explanation"],
         "generated_at": generated_at,
         "sources": sources,
         "worth_knowing": worth,
@@ -144,11 +147,134 @@ def _markdown_sections(text: str) -> dict[str, list[str]]:
     return sections
 
 
-def _overall_status(lines: list[str]) -> str:
+def _dashboard_status(
+    core_lines: list[str],
+    prime_lines: list[str],
+) -> dict[str, str]:
+    current_core = _current_core_lines(core_lines)
+    current_text = " ".join(current_core).lower()
+    prime_text = " ".join(prime_lines).lower()
+    raw_status = _raw_status(current_core).lower()
+    recommended_action = _first_matching(current_core, "Recommended action") or ""
+
+    if _needs_action(raw_status, recommended_action, current_text):
+        return {
+            "label": "Action Needed",
+            "tone": "action",
+            "explanation": (
+                "Core Signal is reporting an actionable condition or a "
+                "recommendation that needs attention."
+            ),
+        }
+
+    if _is_no_action(recommended_action) and _current_state_is_clear(
+        current_text,
+        prime_text,
+    ):
+        return {
+            "label": "Healthy",
+            "tone": "healthy",
+            "explanation": (
+                "No action is recommended, Prime Observer reports no current "
+                "network issue, and DNS activity is normal."
+            ),
+        }
+
+    if raw_status == "healthy":
+        return {
+            "label": "Healthy",
+            "tone": "healthy",
+            "explanation": "Sources do not report a condition needing attention.",
+        }
+
+    if raw_status == "watch" or _monitoring_is_warranted(
+        recommended_action,
+        current_text,
+    ):
+        return {
+            "label": "Watch",
+            "tone": "watch",
+            "explanation": (
+                "There is a meaningful condition worth monitoring, but no "
+                "immediate action is required."
+            ),
+        }
+
+    return {
+        "label": "Healthy",
+        "tone": "healthy",
+        "explanation": "Sources do not report a condition needing attention.",
+    }
+
+
+def _current_core_lines(lines: list[str]) -> list[str]:
+    current: list[str] = []
+    for line in lines:
+        if line.startswith("- Core Signal ") and current:
+            break
+        if line.startswith("- Core Signal ") or current:
+            current.append(line)
+    return current or lines
+
+
+def _raw_status(lines: list[str]) -> str:
     for line in lines:
         if "[" in line and "]" in line:
             return line.split("[", 1)[1].split("]", 1)[0].strip()
-    return "Source-backed"
+    return ""
+
+
+def _needs_action(raw_status: str, recommended_action: str, text: str) -> bool:
+    if raw_status in {"attention", "action needed"}:
+        return True
+    action = _action_text(recommended_action)
+    if _is_no_action(recommended_action):
+        return False
+    if any(term in action for term in ("restart", "call", "fix", "disable")):
+        return True
+    return "sustained slowdown" in text and "0 sustained" not in text
+
+
+def _current_state_is_clear(current_text: str, prime_text: str) -> bool:
+    no_issue = (
+        "no network issue detected" in prime_text
+        or "current status: no_issue_detected" in prime_text
+    )
+    not_actionable = (
+        "not actionable" in current_text
+        or "no sustained instability" in current_text
+        or "no user-impacting issue" in current_text
+    )
+    dns_normal = (
+        "dns filtering looked normal" in current_text
+        or "dns activity is normal" in current_text
+        or "dns is normal" in current_text
+    )
+    return no_issue and not_actionable and dns_normal
+
+
+def _monitoring_is_warranted(recommended_action: str, text: str) -> bool:
+    action = _action_text(recommended_action)
+    if any(term in action for term in ("monitor", "watch", "review", "investigate")):
+        return True
+    return any(
+        term in text
+        for term in (
+            "worth monitoring",
+            "review recommended",
+            "confidence: medium",
+            "confidence: low",
+        )
+    )
+
+
+def _is_no_action(recommended_action: str) -> bool:
+    action = _action_text(recommended_action)
+    return action.startswith("no action") or "no action unless" in action
+
+
+def _action_text(recommended_action: str) -> str:
+    return recommended_action.lower().removeprefix("recommended action:").strip()
 
 
 def _important_lines(
@@ -162,7 +288,8 @@ def _important_lines(
     selected = [
         _clean_briefing_line(line)
         for line in lines
-        if _matches(line, include=include, exclude=exclude)
+        if not _is_report_heading(line)
+        and _matches(line, include=include, exclude=exclude)
     ]
     if not selected and fallback:
         selected = [_clean_briefing_line(line) for line in fallback]
@@ -180,6 +307,10 @@ def _first_matching(lines: list[str], label: str) -> str | None:
         if lowered in line.lower():
             return _clean_briefing_line(line)
     return None
+
+
+def _is_report_heading(line: str) -> bool:
+    return line.startswith("- Core Signal ") or line.startswith("- Prime Observer ")
 
 
 def _matches(line: str, *, include: tuple[str, ...], exclude: tuple[str, ...]) -> bool:
