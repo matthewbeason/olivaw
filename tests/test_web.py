@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from olivaw.models import HealthReport, ProviderStatus
-from olivaw.web import _dashboard_status, app
+from olivaw.web import (
+    _briefing_dashboard,
+    _dashboard_status,
+    _human_generated_time,
+    app,
+)
 
 
 client = TestClient(app)
@@ -115,7 +121,7 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "Today at a glance" in response.text
     assert "source-backed" in response.text
     assert "Generated" in response.text
-    assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", response.text)
+    assert re.search(r"Generated (just now|\d+ minutes? ago|today at)", response.text)
     assert "Refresh briefing" in response.text
     assert "Overall Status" in response.text
     assert "Healthy" in response.text
@@ -159,6 +165,56 @@ def test_briefing_route_reflects_changed_source_data_between_requests(
     assert "Version two" in second.text
     assert "Version one" not in second.text
     assert "This briefing is source-backed using: manual, files." in second.text
+
+
+def test_briefing_dashboard_promotes_dns_domains_and_collapses_metrics():
+    dashboard = _briefing_dashboard(
+        """# Source Briefing
+
+## Prime Observer
+- DNS summary: available from Prime Observer.
+  - Total queries: 1000
+  - Blocked queries: 20
+  - Encrypted queries: 800
+  - Block rate: 2.0%
+  - Raw block rate: 0.02
+  - Top queried domain: www.example.test (count 300, share 0.3)
+  - Top blocked domain: ads.example.test (count 10, share 0.5)
+  - Top resolved domain: api.example.test (count 250, share 0.25)
+
+## Core Signal
+- Core Signal Morning Brief - 2026-06-05 (2026-06-05) [Healthy]: Stable.
+  - Recommended action: No action.
+
+## Attribution
+This briefing is source-backed using: prime_observer, core_signal.
+""",
+        "2026-06-06T00:14:59+00:00",
+        ("prime_observer", "core_signal"),
+    )
+
+    assert dashboard["dns_activity"] == [
+        "Top blocked domain: ads.example.test",
+        "Top resolved domain: api.example.test",
+        "Top queried domain: www.example.test",
+    ]
+    assert "Total queries: 1000" in dashboard["dns_details"]
+    assert "Block rate: 2.0%" in dashboard["dns_details"]
+    assert "Top queried domain: www.example.test (count 300, share 0.3)" in (
+        dashboard["dns_details"]
+    )
+    assert dashboard["sources"] == ("prime_observer", "core_signal")
+
+
+def test_human_generated_time_formats_relative_and_today():
+    generated = datetime(2026, 6, 6, 0, 14, 59, tzinfo=timezone.utc)
+
+    assert _human_generated_time(generated, now=generated + timedelta(minutes=2)) == (
+        "Generated 2 minutes ago"
+    )
+
+    later = generated + timedelta(hours=2)
+    assert "Generated today at" in _human_generated_time(generated, now=later)
 
 
 def test_dashboard_status_maps_no_action_watch_to_healthy():

@@ -57,8 +57,10 @@ def chat_submit(request: Request, prompt: str = Form(...)):
 def briefing_page(request: Request):
     config = load_config()
     briefing = compose_source_briefing(config=config)
-    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    generated_dt = datetime.now(timezone.utc)
+    generated_at = generated_dt.isoformat(timespec="seconds")
     dashboard = _briefing_dashboard(briefing.text, generated_at, briefing.sources)
+    dashboard["generated_display"] = _human_generated_time(generated_dt)
     response = templates.TemplateResponse(
         request,
         "briefing.html",
@@ -106,15 +108,24 @@ def _briefing_dashboard(
         limit=5,
     )
     dns = _important_lines(
-        [*prime_lines, *core_lines],
-        include=("dns", "query", "domain", "block", "encrypted"),
+        prime_lines,
+        include=("top blocked domain", "top resolved domain", "top queried domain"),
         exclude=("available from prime observer",),
-        limit=6,
+        limit=3,
     )
+    dns = _ordered_dns_facts(dns)
+    dns_details = _dns_detail_lines(prime_lines)
     core = _important_lines(
         core_lines,
-        include=("why/status", "performance", "concentration", "weekday", "window"),
-        exclude=("dns interpretation", "recommended action"),
+        include=(
+            "why/status",
+            "performance",
+            "concentration",
+            "weekday",
+            "window",
+            "dns interpretation",
+        ),
+        exclude=("recommended action",),
         limit=5,
     )
 
@@ -124,11 +135,13 @@ def _briefing_dashboard(
         "status_tone": status["tone"],
         "status_explanation": status["explanation"],
         "generated_at": generated_at,
+        "generated_display": generated_at,
         "sources": sources,
         "worth_knowing": worth,
         "recommended_action": recommended,
         "network_status": network,
         "dns_activity": dns,
+        "dns_details": dns_details,
         "core_signal_findings": core,
         "source_details": source_lines,
     }
@@ -299,6 +312,70 @@ def _important_lines(
         if line and line not in deduped:
             deduped.append(line)
     return deduped[:limit]
+
+
+def _ordered_dns_facts(lines: list[str]) -> list[str]:
+    ordered: list[str] = []
+    for label in (
+        "Top blocked domain",
+        "Top resolved domain",
+        "Top queried domain",
+    ):
+        for line in lines:
+            if line.lower().startswith(label.lower()):
+                ordered.append(_strip_parenthetical_metric(line))
+                break
+    return ordered
+
+
+def _dns_detail_lines(lines: list[str]) -> list[str]:
+    detail_terms = (
+        "queries:",
+        "query rate:",
+        "block rate:",
+        "encrypted",
+        "raw ",
+        "count ",
+        "share ",
+    )
+    details = [
+        _clean_briefing_line(line)
+        for line in lines
+        if any(term in line.lower() for term in detail_terms)
+        and not line.lower().startswith("  - dns summary:")
+    ]
+    deduped: list[str] = []
+    for line in details:
+        if line and line not in deduped:
+            deduped.append(line)
+    return deduped
+
+
+def _strip_parenthetical_metric(line: str) -> str:
+    return line.split(" (", 1)[0]
+
+
+def _human_generated_time(
+    generated_at: datetime,
+    *,
+    now: datetime | None = None,
+) -> str:
+    local_generated = generated_at.astimezone()
+    local_now = (now or datetime.now(timezone.utc)).astimezone()
+    delta_seconds = max(0, int((local_now - local_generated).total_seconds()))
+
+    if delta_seconds < 60:
+        return "Generated just now"
+    if delta_seconds < 3600:
+        minutes = max(1, delta_seconds // 60)
+        unit = "minute" if minutes == 1 else "minutes"
+        return f"Generated {minutes} {unit} ago"
+
+    time_text = local_generated.strftime("%I:%M %p").lstrip("0")
+    if local_generated.date() == local_now.date():
+        return f"Generated today at {time_text}"
+    date_text = f"{local_generated.strftime('%b')} {local_generated.day}"
+    return f"Generated {date_text} at {time_text}"
 
 
 def _first_matching(lines: list[str], label: str) -> str | None:

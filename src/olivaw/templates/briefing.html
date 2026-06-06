@@ -24,7 +24,7 @@
     <dl class="summary-meta">
       <div>
         <dt>Generated</dt>
-        <dd>{{ dashboard.generated_at }}</dd>
+        <dd>{{ dashboard.generated_display }}</dd>
       </div>
       <div>
         <dt>Sources Used</dt>
@@ -58,15 +58,15 @@
       <p class="card-copy">{{ dashboard.recommended_action }}</p>
     </article>
 
-    <article class="briefing-card accent-teal">
-      <p class="card-label">Network Status</p>
-      <span class="category-chip">Category: network</span>
-      <h2>Current state</h2>
+    <article class="briefing-card accent-purple">
+      <p class="card-label">Core Signal Findings</p>
+      <span class="category-chip">Category: interpretation</span>
+      <h2>Interpretation</h2>
       <ul class="clean-list">
-        {% for item in dashboard.network_status %}
+        {% for item in dashboard.core_signal_findings %}
           <li>{{ item }}</li>
         {% else %}
-          <li>Network status is unavailable from registered sources.</li>
+          <li>No Core Signal interpretation is available.</li>
         {% endfor %}
       </ul>
     </article>
@@ -82,17 +82,27 @@
           <li>DNS activity is unavailable from registered sources.</li>
         {% endfor %}
       </ul>
+      <details class="inline-details">
+        <summary>DNS details</summary>
+        <ul class="clean-list detail-items">
+          {% for item in dashboard.dns_details %}
+            <li>{{ item }}</li>
+          {% else %}
+            <li>No secondary DNS metrics are available.</li>
+          {% endfor %}
+        </ul>
+      </details>
     </article>
 
-    <article class="briefing-card accent-purple">
-      <p class="card-label">Core Signal Findings</p>
-      <span class="category-chip">Category: interpretation</span>
-      <h2>Interpretation</h2>
+    <article class="briefing-card accent-teal">
+      <p class="card-label">Network Status</p>
+      <span class="category-chip">Category: network</span>
+      <h2>Current state</h2>
       <ul class="clean-list">
-        {% for item in dashboard.core_signal_findings %}
+        {% for item in dashboard.network_status %}
           <li>{{ item }}</li>
         {% else %}
-          <li>No Core Signal interpretation is available.</li>
+          <li>Network status is unavailable from registered sources.</li>
         {% endfor %}
       </ul>
     </article>
@@ -104,6 +114,8 @@
       <dl class="detail-list">
         <dt>Config path</dt>
         <dd>{{ config.config_path or "defaults only" }}</dd>
+        <dt>Exact generated time</dt>
+        <dd>{{ dashboard.generated_at }}</dd>
         {% for item in dashboard.source_details %}
           <dt>Source note</dt>
           <dd>{{ item }}</dd>
