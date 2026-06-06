@@ -571,8 +571,7 @@ Future versions may add:
 - Project monitoring
 - Email, calendar, and contact integrations
 - Tool execution and multi-step task planning
-- Always-on assistant service support
-- LaunchAgent or system service installation
+- Service hardening beyond the current macOS LaunchAgent
 - Desktop automation and computer-use style interactions
 
 These are documented as direction only. v0 does not implement autonomous task
