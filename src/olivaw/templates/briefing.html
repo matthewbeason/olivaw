@@ -116,6 +116,80 @@
       {% endfor %}
     </article>
 
+    <article class="briefing-card accent-teal event-card">
+      <p class="card-label">Prime Observer Investigations</p>
+      <span class="category-chip">Category: factual discovery</span>
+      <h2>Available investigations</h2>
+      {% for investigation in dashboard.prime_investigations %}
+        <section class="event-item">
+          <h3>{{ investigation.title }}</h3>
+          <dl class="event-meta">
+            {% if investigation.created_at %}
+              <dt>Created</dt>
+              <dd>{{ investigation.created_at }}</dd>
+            {% endif %}
+            {% if investigation.event_count %}
+              <dt>Events</dt>
+              <dd>{{ investigation.event_count }}</dd>
+            {% endif %}
+            {% if investigation.status %}
+              <dt>Status</dt>
+              <dd>{{ investigation.status }}</dd>
+            {% endif %}
+            {% if investigation.path %}
+              <dt>Target</dt>
+              <dd>
+                {% if investigation.href %}
+                  <a href="{{ investigation.href }}">Open investigation</a>
+                {% else %}
+                  {{ investigation.path }}
+                {% endif %}
+              </dd>
+            {% endif %}
+            <dt>Attribution</dt>
+            <dd>Prime Observer investigation index</dd>
+          </dl>
+        </section>
+      {% else %}
+        <p class="card-copy">No Prime Observer investigation index is available.</p>
+      {% endfor %}
+
+      {% if dashboard.prime_investigation_navigation %}
+        <details class="inline-details">
+          <summary>Investigation navigation</summary>
+          <dl class="event-meta detail-items">
+            {% for item in dashboard.prime_investigation_navigation %}
+              <dt>{{ item.label }}</dt>
+              <dd>{{ item.target }}</dd>
+            {% endfor %}
+            <dt>Attribution</dt>
+            <dd>Prime Observer navigation metadata</dd>
+          </dl>
+        </details>
+      {% endif %}
+
+      {% if dashboard.prime_nearby_events %}
+        <details class="inline-details">
+          <summary>Nearby events</summary>
+          {% for group in dashboard.prime_nearby_events %}
+            <section class="event-item">
+              {% if group.anchor %}
+                <h3>Events in the same investigation window for {{ group.anchor }}</h3>
+              {% else %}
+                <h3>Nearby events</h3>
+              {% endif %}
+              <ul class="clean-list detail-items">
+                {% for event in group.events %}
+                  <li>{{ event }}</li>
+                {% endfor %}
+              </ul>
+            </section>
+          {% endfor %}
+          <p class="source-footnote">Attribution: Prime Observer factual discovery.</p>
+        </details>
+      {% endif %}
+    </article>
+
     <article class="briefing-card accent-orange">
       <p class="card-label">DNS Activity</p>
       <span class="category-chip">Category: DNS</span>

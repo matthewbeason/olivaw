@@ -98,6 +98,87 @@ def test_prime_observer_source_preserves_investigation_window_without_evidence(
     assert item["investigation_end"] == "2026-06-08T11:12:09+00:00"
     assert "timeline_samples" not in item
     assert "periods" not in item
+    assert item["investigation_navigation"] == {}
+    assert item["event_neighborhoods"] == []
+
+
+def test_prime_observer_source_loads_optional_investigation_index(tmp_path):
+    (tmp_path / "investigation_index.json").write_text(
+        """
+[
+  {
+    "id": "inv-20260608",
+    "title": "June 8 WAN samples",
+    "created_at": "2026-06-08T18:00:00+00:00",
+    "event_count": 3,
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+
+    payload = PrimeObserverSource(directory=tmp_path).fetch()
+
+    item = payload["items"][0]
+    assert item["report_type"] == "investigation_index"
+    assert item["title"] == "Prime Observer investigation index"
+    assert item["investigation_catalog"] == [
+        {
+            "id": "inv-20260608",
+            "title": "June 8 WAN samples",
+            "created_at": "2026-06-08T18:00:00+00:00",
+            "event_count": "3",
+            "status": "available",
+            "path": "viz/investigation.json",
+        }
+    ]
+
+
+def test_prime_observer_source_preserves_investigation_navigation_and_neighbors(
+    tmp_path,
+):
+    (tmp_path / "investigation.json").write_text(
+        """
+{
+  "generated_at": "2026-06-08T18:00:00+00:00",
+  "event_window": {
+    "start": "2026-06-08T11:11:30+00:00",
+    "end": "2026-06-08T11:12:09+00:00"
+  },
+  "events": [
+    {"id": "event-1", "kind": "sample", "ts": "2026-06-08T11:11:30+00:00"}
+  ],
+  "navigation": {
+    "first_event": {"id": "event-1", "label": "First sample", "anchor": "#event-1"},
+    "previous_event": {"id": "event-0", "label": "Previous sample"},
+    "next_event": {"id": "event-2", "label": "Next sample"},
+    "last_event": {"id": "event-3", "label": "Last sample"}
+  },
+  "event_neighborhoods": {
+    "event-2": {
+      "nearby_events": [
+        {"id": "event-1", "label": "Earlier sample"},
+        {"id": "event-3", "label": "Later sample"}
+      ]
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    payload = PrimeObserverSource(directory=tmp_path).fetch()
+
+    item = payload["items"][0]
+    assert item["investigation_navigation"]["first_event"]["id"] == "event-1"
+    assert item["investigation_navigation"]["first_event"]["anchor"] == "#event-1"
+    assert item["investigation_navigation"]["next_event"]["label"] == "Next sample"
+    assert item["investigation_events"][0]["id"] == "event-1"
+    neighborhoods = item["event_neighborhoods"]
+    assert neighborhoods[0]["event"]["id"] == "event-2"
+    assert neighborhoods[0]["nearby_events"][0]["label"] == "Earlier sample"
 
 
 def test_prime_observer_source_surfaces_top_dns_domains(tmp_path):
@@ -224,6 +305,66 @@ def test_source_briefing_prime_observer_is_current_state_focused(tmp_path):
     assert "Raw encrypted query rate: 0.8" in prime_section
     assert "Top blocked category/reason: OISD" in prime_section
     assert "Top redacted entity" not in prime_section
+
+
+def test_source_briefing_renders_prime_observer_investigation_metadata(tmp_path):
+    (tmp_path / "investigation_index.json").write_text(
+        """
+[
+  {
+    "id": "inv-20260608",
+    "title": "June 8 WAN samples",
+    "created_at": "2026-06-08T18:00:00+00:00",
+    "event_count": 2,
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "investigation.json").write_text(
+        """
+{
+  "generated_at": "2026-06-08T18:00:00+00:00",
+  "event_window": {
+    "start": "2026-06-08T11:11:30+00:00",
+    "end": "2026-06-08T11:12:09+00:00"
+  },
+  "navigation": {
+    "first_event": {"id": "event-1", "label": "First sample", "anchor": "#event-1"},
+    "next_event": {"id": "event-2", "label": "Next sample", "anchor": "#event-2"}
+  },
+  "event_neighborhoods": [
+    {
+      "event": {"id": "event-2", "label": "Next sample"},
+      "nearby_events": [
+        {"id": "event-1", "label": "First sample"},
+        {"id": "event-3", "label": "Later sample"}
+      ]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    registry = SourceRegistry()
+    registry.register(PrimeObserverSource(directory=tmp_path))
+
+    briefing = compose_source_briefing(registry=registry)
+    prime_section = _section(briefing.text, "## Prime Observer")
+
+    assert "Investigation index data: from Prime Observer." in prime_section
+    assert "Investigation: June 8 WAN samples" in prime_section
+    assert "Path: viz/investigation.json" in prime_section
+    assert "Navigation metadata: from Prime Observer." in prime_section
+    assert "First event: First sample" in prime_section
+    assert "Next event: Next sample" in prime_section
+    assert "Nearby-event facts: from Prime Observer." in prime_section
+    assert "Events in the same investigation window for Next sample" in prime_section
+    assert "First sample" in prime_section
+    forbidden = ("correlated", "caused by", "likely related", "root cause")
+    assert not any(term in prime_section.lower() for term in forbidden)
 
 
 def test_source_briefing_redacted_dns_values_are_clear(tmp_path):

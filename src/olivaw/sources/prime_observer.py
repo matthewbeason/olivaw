@@ -12,6 +12,7 @@ from olivaw.sources.base import SourceHealth, SourcePayload
 JSON_PRIORITY = (
     "network_attribution.json",
     "nextdns_summary.json",
+    "investigation_index.json",
     "investigation.json",
     "latest.json",
 )
@@ -147,6 +148,8 @@ class PrimeObserverSource:
 
     def _json_item(self, path: Path) -> dict[str, object]:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if path.name == "investigation_index.json":
+            return _investigation_index_item(path, data)
         if not isinstance(data, dict):
             raise ValueError("JSON report must be an object")
 
@@ -337,6 +340,9 @@ def _investigation_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
     event_window = _dict(data.get("event_window"))
     start = event_window.get("start") or _dict(data.get("input")).get("start")
     end = event_window.get("end") or _dict(data.get("input")).get("end")
+    navigation = _investigation_navigation(data.get("navigation"))
+    neighborhoods = _event_neighborhoods(data.get("event_neighborhoods"))
+    events = _investigation_events(data.get("events"))
     summary = "Prime Observer investigation export is available."
     if start and end:
         summary = f"Prime Observer investigation export covers {start} to {end}."
@@ -350,7 +356,25 @@ def _investigation_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
         investigation_end=str(end or ""),
         investigation_context_start=str(event_window.get("context_start") or ""),
         investigation_context_end=str(event_window.get("context_end") or ""),
+        investigation_navigation=navigation,
+        event_neighborhoods=neighborhoods,
+        investigation_events=events,
         report_type="investigation",
+    )
+
+
+def _investigation_index_item(path: Path, data: object) -> dict[str, object]:
+    entries = _investigation_index_entries(data)
+    return _base_item(
+        path=path,
+        title="Prime Observer investigation index",
+        summary=(
+            f"Prime Observer investigation index lists {len(entries)} investigation(s)."
+        ),
+        report_date=_modified(path),
+        status="ok",
+        investigation_catalog=entries,
+        report_type="investigation_index",
     )
 
 
@@ -471,3 +495,163 @@ def _first_text(value: object) -> str | None:
     if value:
         return str(value)
     return None
+
+
+def _investigation_index_entries(data: object) -> list[dict[str, str]]:
+    if isinstance(data, list):
+        raw_entries = data
+    elif isinstance(data, dict):
+        raw_entries = _first_list(
+            data.get("investigations"),
+            data.get("items"),
+            data.get("entries"),
+        )
+    else:
+        raw_entries = []
+
+    entries: list[dict[str, str]] = []
+    for raw in raw_entries:
+        entry = _dict(raw)
+        if not entry:
+            continue
+        normalized = {
+            "id": str(entry.get("id") or "").strip(),
+            "title": str(entry.get("title") or entry.get("id") or "Investigation").strip(),
+            "created_at": str(entry.get("created_at") or "").strip(),
+            "event_count": str(entry.get("event_count") or "").strip(),
+            "status": str(entry.get("status") or "").strip(),
+            "path": str(entry.get("path") or "").strip(),
+        }
+        entries.append(normalized)
+    return entries
+
+
+def _investigation_events(value: object) -> list[dict[str, str]]:
+    events = []
+    for raw in _list(value):
+        event = _event_reference(raw)
+        if event:
+            events.append(event)
+    return events
+
+
+def _investigation_navigation(value: object) -> dict[str, dict[str, str]]:
+    navigation = _dict(value)
+    if not navigation:
+        return {}
+    aliases = {
+        "first_event": ("first_event", "first"),
+        "previous_event": ("previous_event", "previous", "prev"),
+        "next_event": ("next_event", "next"),
+        "last_event": ("last_event", "last"),
+    }
+    normalized: dict[str, dict[str, str]] = {}
+    for target, keys in aliases.items():
+        for key in keys:
+            event = _event_reference(navigation.get(key))
+            if event:
+                normalized[target] = event
+                break
+    return normalized
+
+
+def _event_neighborhoods(value: object) -> list[dict[str, object]]:
+    neighborhoods: list[dict[str, object]] = []
+    if isinstance(value, dict):
+        raw_neighborhoods: list[object] = []
+        for key, raw in value.items():
+            neighborhood = _dict(raw)
+            if neighborhood:
+                neighborhood.setdefault("event_id", key)
+                raw_neighborhoods.append(neighborhood)
+            else:
+                raw_neighborhoods.append(
+                    {"event_id": key, "nearby_events": _list(raw)}
+                )
+    else:
+        raw_neighborhoods = _list(value)
+
+    for raw in raw_neighborhoods:
+        neighborhood = _dict(raw)
+        if not neighborhood:
+            continue
+        anchor = _event_reference(
+            neighborhood.get("event")
+            or neighborhood.get("anchor_event")
+            or neighborhood.get("center_event")
+            or {
+                "id": neighborhood.get("event_id")
+                or neighborhood.get("id")
+                or neighborhood.get("anchor_event_id")
+            }
+        )
+        nearby_events = [
+            event
+            for event in (
+                _event_reference(raw_event)
+                for raw_event in _first_list(
+                    neighborhood.get("nearby_events"),
+                    neighborhood.get("events"),
+                    neighborhood.get("neighbors"),
+                )
+            )
+            if event
+        ]
+        if anchor or nearby_events:
+            neighborhoods.append(
+                {
+                    "event": anchor,
+                    "nearby_events": nearby_events,
+                }
+            )
+    return neighborhoods
+
+
+def _event_reference(value: object) -> dict[str, str]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        text = value.strip()
+        return {"id": text, "label": text} if text else {}
+    data = _dict(value)
+    if not data:
+        return {}
+    event_id = str(
+        data.get("id")
+        or data.get("event_id")
+        or data.get("anchor")
+        or data.get("slug")
+        or ""
+    ).strip()
+    timestamp = str(data.get("ts") or data.get("timestamp") or data.get("time") or "").strip()
+    label = str(
+        data.get("label")
+        or data.get("title")
+        or data.get("summary")
+        or data.get("kind")
+        or event_id
+        or timestamp
+        or "Event"
+    ).strip()
+    event = {
+        "id": event_id,
+        "label": label,
+        "timestamp": timestamp,
+        "kind": str(data.get("kind") or data.get("type") or "").strip(),
+        "status": str(data.get("status") or "").strip(),
+        "path": str(data.get("path") or data.get("url") or data.get("href") or "").strip(),
+        "anchor": str(data.get("anchor") or data.get("fragment") or "").strip(),
+    }
+    return {key: value for key, value in event.items() if value}
+
+
+def _first_list(*values: object) -> list[object]:
+    for value in values:
+        items = _list(value)
+        if items:
+            return items
+    return []
+
+
+def _list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []

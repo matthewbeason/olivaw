@@ -116,6 +116,9 @@ def _briefing_dashboard(
     )
     dns = _ordered_dns_facts(dns)
     dns_details = _dns_detail_lines(prime_lines)
+    investigations = _prime_investigation_catalog(prime_lines)
+    investigation_navigation = _prime_investigation_navigation(prime_lines)
+    nearby_events = _prime_nearby_events(prime_lines)
     events = _core_signal_events(core_lines)
     core = _important_lines(
         core_lines,
@@ -144,6 +147,9 @@ def _briefing_dashboard(
         "network_status": network,
         "dns_activity": dns,
         "dns_details": dns_details,
+        "prime_investigations": investigations,
+        "prime_investigation_navigation": investigation_navigation,
+        "prime_nearby_events": nearby_events,
         "core_signal_findings": core,
         "core_signal_events": events,
         "source_details": source_lines,
@@ -396,6 +402,106 @@ def _core_signal_events(lines: list[str]) -> list[dict[str, str]]:
         elif key == "evidence window":
             current["evidence_window"] = value
     return events[:5]
+
+
+def _prime_investigation_catalog(lines: list[str]) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        label, separator, value = cleaned.partition(":")
+        if not separator:
+            continue
+        key = label.strip().lower()
+        value = value.strip()
+        if key == "investigation":
+            current = {"title": value}
+            entries.append(current)
+            continue
+        if current is None:
+            continue
+        if key == "created at":
+            current["created_at"] = value
+        elif key == "event count":
+            current["event_count"] = value
+        elif key == "status":
+            current["status"] = value
+        elif key == "path":
+            current["path"] = value
+            if _is_external_url(value):
+                current["href"] = value
+    return entries[:5]
+
+
+def _prime_investigation_navigation(lines: list[str]) -> list[dict[str, str]]:
+    navigation = []
+    labels = {
+        "first event": "First event",
+        "previous event": "Previous event",
+        "next event": "Next event",
+        "last event": "Last event",
+    }
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        label, separator, value = cleaned.partition(":")
+        if not separator:
+            continue
+        key = label.strip().lower()
+        if key in labels:
+            navigation.append({"label": labels[key], "target": value.strip()})
+    return navigation
+
+
+def _prime_nearby_events(lines: list[str]) -> list[dict[str, object]]:
+    groups: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    in_nearby = False
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        lowered = cleaned.lower()
+        if lowered.startswith("nearby-event facts:"):
+            in_nearby = True
+            continue
+        if _ends_nearby_event_block(lowered):
+            in_nearby = False
+            current = None
+            continue
+        if not in_nearby:
+            continue
+        if lowered.startswith("events in the same investigation window for "):
+            anchor = cleaned.removeprefix(
+                "Events in the same investigation window for "
+            ).removesuffix(":")
+            current = {"anchor": anchor, "events": []}
+            groups.append(current)
+            continue
+        if lowered == "nearby events:":
+            current = {"anchor": "", "events": []}
+            groups.append(current)
+            continue
+        if current is not None and cleaned:
+            events = current.setdefault("events", [])
+            if isinstance(events, list):
+                events.append(cleaned)
+    return [
+        group
+        for group in groups[:3]
+        if isinstance(group.get("events"), list) and group.get("events")
+    ]
+
+
+def _ends_nearby_event_block(line: str) -> bool:
+    return line.startswith(
+        (
+            "investigation metadata:",
+            "navigation metadata:",
+            "investigation index data:",
+            "network attribution generated",
+            "dns summary:",
+            "latest sample timestamp:",
+            "current-state observations only",
+        )
+    )
 
 
 def _is_external_url(value: str) -> bool:

@@ -263,6 +263,61 @@ def test_briefing_dashboard_links_absolute_prime_observer_investigation_url():
     )
 
 
+def test_briefing_dashboard_extracts_prime_observer_investigations():
+    dashboard = _briefing_dashboard(
+        """# Source Briefing
+
+## Prime Observer
+- Current-state observations only; interpretation belongs to Core Signal.
+- Investigation index data: from Prime Observer.
+  - Investigation: June 8 WAN samples
+    - Created at: 2026-06-08T18:00:00+00:00
+    - Event count: 2
+    - Status: available
+    - Path: http://127.0.0.1:8000/investigation.json
+- Investigation metadata: from Prime Observer.
+  - Navigation metadata: from Prime Observer.
+    - First event: First sample (id event-1, target #event-1)
+    - Previous event: Previous sample (id event-0)
+    - Next event: Next sample (id event-2, target #event-2)
+    - Last event: Last sample (id event-3)
+  - Nearby-event facts: from Prime Observer.
+    - Events in the same investigation window for Next sample:
+      - First sample (id event-1)
+      - Later sample (id event-3)
+- Latest sample timestamp: 2026-06-08T19:00:00+00:00
+
+## Attribution
+This briefing is source-backed using: prime_observer.
+""",
+        "2026-06-08T18:00:00+00:00",
+        ("prime_observer",),
+    )
+
+    assert dashboard["prime_investigations"] == [
+        {
+            "title": "June 8 WAN samples",
+            "created_at": "2026-06-08T18:00:00+00:00",
+            "event_count": "2",
+            "status": "available",
+            "path": "http://127.0.0.1:8000/investigation.json",
+            "href": "http://127.0.0.1:8000/investigation.json",
+        }
+    ]
+    assert dashboard["prime_investigation_navigation"] == [
+        {"label": "First event", "target": "First sample (id event-1, target #event-1)"},
+        {"label": "Previous event", "target": "Previous sample (id event-0)"},
+        {"label": "Next event", "target": "Next sample (id event-2, target #event-2)"},
+        {"label": "Last event", "target": "Last sample (id event-3)"},
+    ]
+    assert dashboard["prime_nearby_events"] == [
+        {
+            "anchor": "Next sample",
+            "events": ["First sample (id event-1)", "Later sample (id event-3)"],
+        }
+    ]
+
+
 def test_briefing_route_renders_core_signal_event_without_broken_local_link(
     monkeypatch,
     tmp_path,
@@ -309,6 +364,69 @@ Technical Evidence:
     assert "Confidence" not in response.text
     assert "View investigation: viz/investigate.html?start=1&amp;end=2" in response.text
     assert 'href="viz/investigate.html?start=1&amp;end=2"' not in response.text
+
+
+def test_briefing_route_renders_prime_observer_investigation_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    for name in ("OLIVAW_CONFIG", "OLIVAW_FILES_DIR", "OLIVAW_CORE_SIGNAL_ENABLED"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_ENABLED", "false")
+    prime_dir = tmp_path / "prime"
+    prime_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "id": "inv-20260608",
+    "title": "June 8 WAN samples",
+    "created_at": "2026-06-08T18:00:00+00:00",
+    "event_count": 2,
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (prime_dir / "investigation.json").write_text(
+        """
+{
+  "generated_at": "2026-06-08T18:00:00+00:00",
+  "navigation": {
+    "first_event": {"id": "event-1", "label": "First sample", "anchor": "#event-1"},
+    "last_event": {"id": "event-2", "label": "Last sample", "anchor": "#event-2"}
+  },
+  "event_neighborhoods": [
+    {
+      "event": {"id": "event-2", "label": "Last sample"},
+      "nearby_events": [
+        {"id": "event-1", "label": "First sample"}
+      ]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Available investigations" in response.text
+    assert "June 8 WAN samples" in response.text
+    assert "Prime Observer investigation index" in response.text
+    assert "Investigation navigation" in response.text
+    assert "Prime Observer navigation metadata" in response.text
+    assert "Nearby events" in response.text
+    assert "Events in the same investigation window for Last sample" in response.text
+    assert "Prime Observer factual discovery" in response.text
+    assert "Core Signal Findings" in response.text
+    forbidden = ("correlated", "caused by", "likely related", "root cause")
+    assert not any(term in response.text.lower() for term in forbidden)
 
 
 def test_human_generated_time_formats_relative_and_today():

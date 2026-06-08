@@ -183,6 +183,10 @@ def _prime_observer_lines(snapshots: list[dict[str, object]]) -> list[str]:
                 lines.extend(_prime_latest_sample_lines(item))
             elif report_type == "nextdns_summary":
                 lines.extend(_prime_dns_lines(item))
+            elif report_type == "investigation_index":
+                lines.extend(_prime_investigation_index_lines(item))
+            elif report_type == "investigation":
+                lines.extend(_prime_investigation_lines(item))
         return lines
     return []
 
@@ -411,6 +415,87 @@ def _prime_dns_lines(item: dict[str, object]) -> list[str]:
     return lines
 
 
+def _prime_investigation_index_lines(item: dict[str, object]) -> list[str]:
+    catalog = _dicts(item.get("investigation_catalog"))
+    if not catalog:
+        return ["- Investigation index data: from Prime Observer, no entries listed."]
+    lines = ["- Investigation index data: from Prime Observer."]
+    for entry in catalog[:5]:
+        title = str(entry.get("title") or entry.get("id") or "Investigation").strip()
+        lines.append(f"  - Investigation: {title}")
+        for key, label in (
+            ("created_at", "Created at"),
+            ("event_count", "Event count"),
+            ("status", "Status"),
+            ("path", "Path"),
+        ):
+            value = str(entry.get(key) or "").strip()
+            if value:
+                lines.append(f"    - {label}: {value}")
+    return lines
+
+
+def _prime_investigation_lines(item: dict[str, object]) -> list[str]:
+    lines = ["- Investigation metadata: from Prime Observer."]
+    start = str(item.get("investigation_start") or "").strip()
+    end = str(item.get("investigation_end") or "").strip()
+    if start or end:
+        lines.append(f"  - Investigation window: {_window_label(start, end)}")
+
+    navigation = item.get("investigation_navigation")
+    if isinstance(navigation, dict) and navigation:
+        lines.append("  - Navigation metadata: from Prime Observer.")
+        for key, label in (
+            ("first_event", "First event"),
+            ("previous_event", "Previous event"),
+            ("next_event", "Next event"),
+            ("last_event", "Last event"),
+        ):
+            event = navigation.get(key)
+            if isinstance(event, dict):
+                lines.append(f"    - {label}: {_event_reference_label(event)}")
+
+    neighborhoods = _dicts(item.get("event_neighborhoods"))
+    if neighborhoods:
+        lines.append("  - Nearby-event facts: from Prime Observer.")
+        for neighborhood in neighborhoods[:3]:
+            anchor = neighborhood.get("event")
+            if isinstance(anchor, dict) and anchor:
+                lines.append(
+                    "    - Events in the same investigation window for "
+                    f"{_event_reference_label(anchor)}:"
+                )
+            else:
+                lines.append("    - Nearby events:")
+            nearby_events = _dicts(neighborhood.get("nearby_events"))
+            for event in nearby_events[:5]:
+                lines.append(f"      - {_event_reference_label(event)}")
+    return lines
+
+
+def _window_label(start: str, end: str) -> str:
+    if start and end:
+        return f"{start} to {end}"
+    return start or end or "unavailable"
+
+
+def _event_reference_label(event: dict[str, object]) -> str:
+    label = str(event.get("label") or event.get("id") or "Event").strip()
+    event_id = str(event.get("id") or "").strip()
+    timestamp = str(event.get("timestamp") or "").strip()
+    target = str(event.get("path") or event.get("anchor") or "").strip()
+    details = []
+    if event_id and event_id != label:
+        details.append(f"id {event_id}")
+    if timestamp:
+        details.append(timestamp)
+    if target:
+        details.append(f"target {target}")
+    if details:
+        return f"{label} ({', '.join(details)})"
+    return label
+
+
 def _source_note_lines(snapshots: list[dict[str, object]]) -> list[str]:
     lines: list[str] = []
     for snapshot in snapshots:
@@ -442,6 +527,12 @@ def _items(payload: SourcePayload | None) -> list[dict[str, object]]:
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]
+
+
+def _dicts(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _one_line_preview(text: str) -> str:
