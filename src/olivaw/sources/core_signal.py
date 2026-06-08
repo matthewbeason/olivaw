@@ -186,6 +186,14 @@ class CoreSignalSource:
                 _dict(data.get("dns")).get("recommended_action"),
             ),
             dns_findings=dns_findings,
+            confidence=_first_present(data.get("confidence")),
+            confidence_reason=_first_present(data.get("confidence_reason")),
+            supporting_facts=_coerce_supporting_facts(data.get("supporting_facts")),
+            recommendation_trace=_coerce_recommendation_trace(
+                data.get("recommendation_trace")
+            ),
+            interpretation_source=_first_present(data.get("interpretation_source")),
+            related_events=_coerce_related_events(data.get("related_events")),
             preview=summary,
             report_type="json",
         )
@@ -399,6 +407,95 @@ def _coerce_events(value: object) -> list[dict[str, object]]:
     return events[:5]
 
 
+def _coerce_supporting_facts(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    facts: list[dict[str, str]] = []
+    for raw in value:
+        if isinstance(raw, dict):
+            summary = _first_present(raw.get("summary"), raw.get("title"))
+            source = _first_present(raw.get("source"), raw.get("attribution"))
+            reference = _reference_label(raw.get("reference"))
+        else:
+            summary = str(raw) if raw else None
+            source = None
+            reference = None
+        fact = {
+            "summary": summary or "",
+            "source": source or "",
+            "reference": reference or "",
+        }
+        if any(fact.values()):
+            facts.append(fact)
+    return facts[:5]
+
+
+def _coerce_recommendation_trace(value: object) -> list[dict[str, str]]:
+    if isinstance(value, dict):
+        trace = []
+        for key, label in (
+            ("recommendation", "Recommendation"),
+            ("supporting_facts", "Supporting facts"),
+            ("interpretation", "Interpretation"),
+        ):
+            text = _trace_value(value.get(key))
+            if text:
+                trace.append({"stage": label, "detail": text})
+        if trace:
+            return trace
+    if isinstance(value, list):
+        trace = []
+        for raw in value:
+            if isinstance(raw, dict):
+                stage = _first_present(raw.get("stage"), raw.get("label"), raw.get("type"))
+                detail = _first_present(
+                    raw.get("detail"),
+                    raw.get("summary"),
+                    raw.get("value"),
+                    raw.get("text"),
+                )
+            else:
+                stage = None
+                detail = str(raw) if raw else None
+            if detail:
+                trace.append({"stage": stage or "Trace", "detail": detail})
+        return trace[:6]
+    text = _trace_value(value)
+    if text:
+        return [{"stage": "Trace", "detail": text}]
+    return []
+
+
+def _coerce_related_events(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    related_events: list[dict[str, str]] = []
+    for raw in value:
+        if isinstance(raw, dict):
+            event_id = _first_present(raw.get("id"), raw.get("event_id"))
+            relationship = _first_present(
+                raw.get("relationship"),
+                raw.get("relationship_type"),
+                raw.get("type"),
+            )
+            summary = _first_present(raw.get("summary"), raw.get("title"))
+            reference = _reference_label(raw.get("reference"))
+        else:
+            event_id = str(raw) if raw else None
+            relationship = None
+            summary = None
+            reference = None
+        event = {
+            "id": event_id or "",
+            "relationship": relationship or "",
+            "summary": summary or "",
+            "reference": reference or "",
+        }
+        if any(event.values()):
+            related_events.append(event)
+    return related_events[:5]
+
+
 def _event_from_mapping(data: dict[str, Any]) -> dict[str, object]:
     if not data:
         return {}
@@ -442,6 +539,13 @@ def _event_from_mapping(data: dict[str, Any]) -> dict[str, object]:
         "recommended_action": str(
             data.get("recommended_action") or data.get("recommendation") or ""
         ),
+        "confidence_reason": str(data.get("confidence_reason") or ""),
+        "supporting_facts": _coerce_supporting_facts(data.get("supporting_facts")),
+        "recommendation_trace": _coerce_recommendation_trace(
+            data.get("recommendation_trace")
+        ),
+        "interpretation_source": str(data.get("interpretation_source") or ""),
+        "related_events": _coerce_related_events(data.get("related_events")),
         "issue_location": str(data.get("issue_location") or data.get("location") or ""),
         "attribution_source": str(data.get("attribution_source") or ""),
         "prime_observer_investigation": investigation or "",
@@ -528,6 +632,47 @@ def _first_present(*values: object) -> str | None:
     for value in values:
         if value:
             return str(value)
+    return None
+
+
+def _trace_value(value: object) -> str | None:
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                part = _first_present(
+                    item.get("summary"),
+                    item.get("title"),
+                    item.get("id"),
+                    item.get("reference"),
+                )
+            else:
+                part = str(item) if item else None
+            if part:
+                parts.append(part)
+        return "; ".join(parts) or None
+    if isinstance(value, dict):
+        return _first_present(
+            value.get("summary"),
+            value.get("title"),
+            value.get("id"),
+            value.get("reference"),
+        )
+    if value:
+        return str(value)
+    return None
+
+
+def _reference_label(value: object) -> str | None:
+    if isinstance(value, dict):
+        return _first_present(
+            value.get("url"),
+            value.get("path"),
+            value.get("id"),
+            value.get("label"),
+        )
+    if value:
+        return str(value)
     return None
 
 

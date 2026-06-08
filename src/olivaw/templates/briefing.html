@@ -91,6 +91,14 @@
               <dt>Confidence</dt>
               <dd>{{ event.confidence }}</dd>
             {% endif %}
+            {% if event.confidence_reason %}
+              <dt>Confidence rationale</dt>
+              <dd>{{ event.confidence_reason }}</dd>
+            {% endif %}
+            {% if event.supporting_fact_count %}
+              <dt>Supporting facts</dt>
+              <dd>{{ event.supporting_fact_count }}</dd>
+            {% endif %}
             {% if event.issue_location %}
               <dt>Issue location</dt>
               <dd>{{ event.issue_location }}</dd>
@@ -98,6 +106,18 @@
             {% if event.recommended_action %}
               <dt>Recommended action</dt>
               <dd>{{ event.recommended_action }}</dd>
+            {% endif %}
+            {% if event.evidence %}
+              <dt>Evidence</dt>
+              <dd>{{ event.evidence }}</dd>
+            {% endif %}
+            {% if event.interpretation %}
+              <dt>Interpretation</dt>
+              <dd>{{ event.interpretation }}</dd>
+            {% endif %}
+            {% if event.presentation %}
+              <dt>Presentation</dt>
+              <dd>{{ event.presentation }}</dd>
             {% endif %}
             {% if event.investigation_reference %}
               <dt>Investigation</dt>
@@ -110,10 +130,42 @@
               </dd>
             {% endif %}
           </dl>
+          {% if event.why or event.supporting_facts or event.recommendation_trace or event.related_events %}
+            <details class="inline-details">
+              <summary>Explanation details</summary>
+              <dl class="event-meta detail-items">
+                {% if event.why %}
+                  <dt>Why it matters</dt>
+                  <dd>{{ event.why }}</dd>
+                {% endif %}
+                {% for fact in event.supporting_facts %}
+                  <dt>Fact</dt>
+                  <dd>
+                    {{ fact.summary }}
+                    {% if fact.source %}<br>Source: {{ fact.source }}{% endif %}
+                    {% if fact.reference %}<br>Reference: {{ fact.reference }}{% endif %}
+                  </dd>
+                {% endfor %}
+                {% for step in event.recommendation_trace %}
+                  <dt>{{ step.stage }}</dt>
+                  <dd>{{ step.detail }}</dd>
+                {% endfor %}
+                {% for related_event in event.related_events %}
+                  <dt>Related event</dt>
+                  <dd>{{ related_event }}</dd>
+                {% endfor %}
+              </dl>
+            </details>
+          {% endif %}
         </section>
       {% else %}
         <p class="card-copy">No interpreted Core Signal events are available.</p>
       {% endfor %}
+      <p class="source-footnote">
+        Attribution: evidence from Prime Observer when labeled; interpretation,
+        confidence, recommendations, and relationships from Core Signal;
+        presentation by Olivaw.
+      </p>
     </article>
 
     <article class="briefing-card accent-teal event-card">

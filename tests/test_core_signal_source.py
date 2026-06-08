@@ -108,6 +108,31 @@ def test_core_signal_source_preserves_json_event_metadata(tmp_path):
       "summary": "1 sustained slowdown period was found.",
       "why": "Sustained slowdown was detected.",
       "recommended_action": "Check provider status if symptoms matched.",
+      "confidence_reason": "Matched a sustained slowdown policy threshold.",
+      "supporting_facts": [
+        {
+          "summary": "WAN p95 exceeded the sustained threshold.",
+          "source": "prime_observer",
+          "reference": {
+            "url": "http://127.0.0.1:8000/investigate.html?start=1&end=2"
+          },
+          "raw_evidence": {"p95_ms": 221}
+        }
+      ],
+      "recommendation_trace": {
+        "recommendation": "Check provider status if symptoms matched.",
+        "supporting_facts": ["WAN p95 exceeded the sustained threshold."],
+        "interpretation": "Core Signal classified this as sustained slowdown."
+      },
+      "interpretation_source": "core_signal",
+      "related_events": [
+        {
+          "event_id": "core-signal-dns-watch-def456",
+          "relationship": "same_window",
+          "summary": "DNS watch event in the same Core Signal output.",
+          "reference": "events[1]"
+        }
+      ],
       "issue_location": "Likely upstream/ISP issue",
       "attribution_source": "prime_observer_incident",
       "prime_observer_reference": {
@@ -136,9 +161,41 @@ def test_core_signal_source_preserves_json_event_metadata(tmp_path):
     assert event["kind"] == "sustained_slowdown"
     assert event["severity"] == "attention"
     assert event["confidence"] == "High"
+    assert event["confidence_reason"] == "Matched a sustained slowdown policy threshold."
     assert event["window_start"] == "2026-06-08T11:11:30+00:00"
     assert event["window_end"] == "2026-06-08T11:12:09+00:00"
     assert event["recommended_action"] == "Check provider status if symptoms matched."
+    assert event["supporting_facts"] == [
+        {
+            "summary": "WAN p95 exceeded the sustained threshold.",
+            "source": "prime_observer",
+            "reference": "http://127.0.0.1:8000/investigate.html?start=1&end=2",
+        }
+    ]
+    assert "raw_evidence" not in event["supporting_facts"][0]
+    assert event["recommendation_trace"] == [
+        {
+            "stage": "Recommendation",
+            "detail": "Check provider status if symptoms matched.",
+        },
+        {
+            "stage": "Supporting facts",
+            "detail": "WAN p95 exceeded the sustained threshold.",
+        },
+        {
+            "stage": "Interpretation",
+            "detail": "Core Signal classified this as sustained slowdown.",
+        },
+    ]
+    assert event["interpretation_source"] == "core_signal"
+    assert event["related_events"] == [
+        {
+            "id": "core-signal-dns-watch-def456",
+            "relationship": "same_window",
+            "summary": "DNS watch event in the same Core Signal output.",
+            "reference": "events[1]",
+        }
+    ]
     assert event["issue_location"] == "Likely upstream/ISP issue"
     assert event["attribution_source"] == "prime_observer_incident"
     assert event["prime_observer_investigation"].startswith("http://127.0.0.1:8000/")
@@ -279,7 +336,7 @@ def test_source_briefing_renders_core_signal_event_metadata(tmp_path):
         in briefing.text
     )
     assert "Issue location: Likely upstream/ISP issue" in briefing.text
-    assert "Attribution source: Prime Observer incident attribution" in briefing.text
+    assert "Evidence: Prime Observer incident attribution" in briefing.text
     assert "View investigation: viz/investigate.html?start=1&end=2" in briefing.text
 
 

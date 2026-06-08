@@ -284,8 +284,6 @@ def _monitoring_is_warranted(recommended_action: str, text: str) -> bool:
         for term in (
             "worth monitoring",
             "review recommended",
-            "confidence: medium",
-            "confidence: low",
         )
     )
 
@@ -379,6 +377,18 @@ def _core_signal_events(lines: list[str]) -> list[dict[str, str]]:
             continue
         if current is None:
             continue
+        if key == "recommendation trace":
+            current["_trace_open"] = "1"
+            continue
+        if current.get("_trace_open") and key in {
+            "recommendation",
+            "supporting facts",
+            "interpretation",
+        }:
+            trace = current.setdefault("recommendation_trace", [])
+            if isinstance(trace, list):
+                trace.append({"stage": label.strip(), "detail": value})
+            continue
         if key == "event id":
             current["event_id"] = value
         elif key == "event kind":
@@ -389,18 +399,38 @@ def _core_signal_events(lines: list[str]) -> list[dict[str, str]]:
             current["affected_window"] = value
         elif key == "confidence":
             current["confidence"] = value
+        elif key == "confidence rationale":
+            current["confidence_reason"] = value
+        elif key == "why it matters":
+            current["why"] = value
+        elif key == "supporting facts":
+            current["supporting_fact_count"] = value
+        elif key == "fact":
+            facts = current.setdefault("supporting_facts", [])
+            if isinstance(facts, list):
+                facts.append({"summary": value})
+        elif key in {"source", "reference"}:
+            facts = current.get("supporting_facts")
+            if isinstance(facts, list) and facts and isinstance(facts[-1], dict):
+                facts[-1][key] = value
         elif key == "recommended action":
             current["recommended_action"] = value
         elif key == "issue location":
             current["issue_location"] = value
-        elif key == "attribution source":
-            current["attribution_source"] = value
+        elif key == "evidence":
+            current["evidence"] = value
+        elif key in {"interpretation", "presentation", "interpretation source"}:
+            current[key.replace(" ", "_")] = value
         elif key == "view investigation":
             current["investigation_reference"] = value
             if _is_external_url(value):
                 current["investigation_href"] = value
         elif key == "evidence window":
             current["evidence_window"] = value
+        elif key == "related event":
+            related_events = current.setdefault("related_events", [])
+            if isinstance(related_events, list):
+                related_events.append(value)
     return events[:5]
 
 

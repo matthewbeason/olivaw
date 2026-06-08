@@ -210,6 +210,35 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
             status = str(item.get("status") or "unknown")
             summary = _one_line_preview(str(item.get("summary") or "No summary."))
             lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
+            lines.append("  - Interpretation: Core Signal")
+            lines.append("  - Presentation: Olivaw")
+            report_confidence = str(item.get("confidence") or "").strip()
+            if report_confidence:
+                lines.append(f"  - Confidence: {report_confidence}")
+            confidence_reason = str(item.get("confidence_reason") or "").strip()
+            if confidence_reason:
+                lines.append(f"  - Confidence rationale: {confidence_reason}")
+            supporting_facts = _dicts(item.get("supporting_facts"))
+            if supporting_facts:
+                lines.append(f"  - Supporting facts: {len(supporting_facts)}")
+                for fact in supporting_facts[:3]:
+                    lines.extend(_supporting_fact_lines(fact, indent="    "))
+            recommendation_trace = _dicts(item.get("recommendation_trace"))
+            if recommendation_trace:
+                lines.append("  - Recommendation trace:")
+                for step in recommendation_trace[:6]:
+                    stage = str(step.get("stage") or "Trace").strip()
+                    detail = _one_line_preview(str(step.get("detail") or ""))
+                    if detail:
+                        lines.append(f"    - {stage}: {detail}")
+            interpretation_source = str(item.get("interpretation_source") or "").strip()
+            if interpretation_source:
+                lines.append(f"  - Interpretation source: {interpretation_source}")
+            related_events = _dicts(item.get("related_events"))
+            if related_events:
+                lines.append("  - Related events:")
+                for related_event in related_events[:3]:
+                    lines.append(f"    - Related event: {_related_event_label(related_event)}")
             events = item.get("events", [])
             if isinstance(events, list):
                 for event in [event for event in events if isinstance(event, dict)][:3]:
@@ -244,6 +273,8 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
 def _core_signal_event_lines(event: dict[str, object]) -> list[str]:
     summary = _one_line_preview(str(event.get("summary") or "Core Signal event."))
     lines = [f"  - Event: {summary}"]
+    lines.append("    - Interpretation: Core Signal")
+    lines.append("    - Presentation: Olivaw")
     event_id = str(event.get("id") or "").strip()
     if event_id:
         lines.append(f"    - Event ID: {event_id}")
@@ -265,23 +296,76 @@ def _core_signal_event_lines(event: dict[str, object]) -> list[str]:
         lines.append(f"    - Confidence: {confidence}")
     why = str(event.get("why") or "").strip()
     if why:
-        lines.append(f"    - Why/status reasoning: {why}")
+        lines.append(f"    - Why it matters: {why}")
+    confidence_reason = str(event.get("confidence_reason") or "").strip()
+    if confidence_reason:
+        lines.append(f"    - Confidence rationale: {confidence_reason}")
+    supporting_facts = _dicts(event.get("supporting_facts"))
+    if supporting_facts:
+        lines.append(f"    - Supporting facts: {len(supporting_facts)}")
+        for fact in supporting_facts[:3]:
+            lines.extend(_supporting_fact_lines(fact, indent="      "))
     issue_location = str(event.get("issue_location") or "").strip()
     if issue_location:
         lines.append(f"    - Issue location: {issue_location}")
     recommended_action = str(event.get("recommended_action") or "").strip()
     if recommended_action:
         lines.append(f"    - Recommended action: {recommended_action}")
+    recommendation_trace = _dicts(event.get("recommendation_trace"))
+    if recommendation_trace:
+        lines.append("    - Recommendation trace:")
+        for step in recommendation_trace[:6]:
+            stage = str(step.get("stage") or "Trace").strip()
+            detail = _one_line_preview(str(step.get("detail") or ""))
+            if detail:
+                lines.append(f"      - {stage}: {detail}")
     attribution = str(event.get("attribution_source") or "").strip()
     if attribution:
-        lines.append(f"    - Attribution source: {_source_label(attribution)}")
+        lines.append(f"    - Evidence: {_source_label(attribution)}")
+    interpretation_source = str(event.get("interpretation_source") or "").strip()
+    if interpretation_source:
+        lines.append(f"    - Interpretation source: {interpretation_source}")
     investigation = _investigation_reference(event)
     if investigation:
         lines.append(f"    - View investigation: {investigation}")
     evidence = _evidence_window_label(event)
     if evidence:
         lines.append(f"    - Evidence window: {evidence}")
+    related_events = _dicts(event.get("related_events"))
+    if related_events:
+        lines.append("    - Related events:")
+        for related_event in related_events[:3]:
+            lines.append(f"      - Related event: {_related_event_label(related_event)}")
     return lines
+
+
+def _supporting_fact_lines(fact: dict[str, object], *, indent: str) -> list[str]:
+    summary = _one_line_preview(str(fact.get("summary") or "Supporting fact."))
+    lines = [f"{indent}- Fact: {summary}"]
+    source = str(fact.get("source") or "").strip()
+    reference = str(fact.get("reference") or "").strip()
+    if source:
+        lines.append(f"{indent}  - Source: {source}")
+    if reference:
+        lines.append(f"{indent}  - Reference: {reference}")
+    return lines
+
+
+def _related_event_label(event: dict[str, object]) -> str:
+    pieces = []
+    event_id = str(event.get("id") or "").strip()
+    relationship = str(event.get("relationship") or "").strip()
+    summary = str(event.get("summary") or "").strip()
+    reference = str(event.get("reference") or "").strip()
+    if event_id:
+        pieces.append(event_id)
+    if relationship:
+        pieces.append(relationship)
+    if summary:
+        pieces.append(summary)
+    if reference:
+        pieces.append(reference)
+    return " - ".join(pieces) or "Related event"
 
 
 def _event_window_label(event: dict[str, object]) -> str:

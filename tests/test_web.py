@@ -244,6 +244,71 @@ This briefing is source-backed using: core_signal.
     assert "investigation_href" not in event
 
 
+def test_briefing_dashboard_extracts_core_signal_explanation_metadata():
+    dashboard = _briefing_dashboard(
+        """# Source Briefing
+
+## Core Signal
+- Core Signal Morning Brief - 2026-06-08 (2026-06-08) [Attention]: Slowdown.
+  - Event: 1 sustained slowdown period was found.
+    - Interpretation: Core Signal
+    - Presentation: Olivaw
+    - Confidence: High
+    - Why it matters: Sustained slowdown was detected.
+    - Confidence rationale: Matched a sustained slowdown policy threshold.
+    - Supporting facts: 1
+      - Fact: WAN p95 exceeded the sustained threshold.
+        - Source: prime_observer
+        - Reference: http://127.0.0.1:8000/investigate.html?start=1&end=2
+    - Recommended action: Check provider status if symptoms matched.
+    - Recommendation trace:
+      - Recommendation: Check provider status if symptoms matched.
+      - Supporting facts: WAN p95 exceeded the sustained threshold.
+      - Interpretation: Core Signal classified this as sustained slowdown.
+    - Evidence: Prime Observer incident attribution
+    - Related events:
+      - Related event: core-signal-dns-watch-def456 - same_window
+
+## Attribution
+This briefing is source-backed using: core_signal.
+""",
+        "2026-06-08T18:00:00+00:00",
+        ("core_signal",),
+    )
+
+    event = dashboard["core_signal_events"][0]
+    assert event["confidence"] == "High"
+    assert event["confidence_reason"] == "Matched a sustained slowdown policy threshold."
+    assert event["supporting_fact_count"] == "1"
+    assert event["supporting_facts"] == [
+        {
+            "summary": "WAN p95 exceeded the sustained threshold.",
+            "source": "prime_observer",
+            "reference": "http://127.0.0.1:8000/investigate.html?start=1&end=2",
+        }
+    ]
+    assert event["recommendation_trace"] == [
+        {
+            "stage": "Recommendation",
+            "detail": "Check provider status if symptoms matched.",
+        },
+        {
+            "stage": "Supporting facts",
+            "detail": "WAN p95 exceeded the sustained threshold.",
+        },
+        {
+            "stage": "Interpretation",
+            "detail": "Core Signal classified this as sustained slowdown.",
+        },
+    ]
+    assert event["evidence"] == "Prime Observer incident attribution"
+    assert event["interpretation"] == "Core Signal"
+    assert event["presentation"] == "Olivaw"
+    assert event["related_events"] == [
+        "core-signal-dns-watch-def456 - same_window"
+    ]
+
+
 def test_briefing_dashboard_links_absolute_prime_observer_investigation_url():
     dashboard = _briefing_dashboard(
         """# Source Briefing
@@ -476,6 +541,20 @@ def test_dashboard_status_keeps_watch_when_monitoring_is_warranted():
     assert status["label"] == "Watch"
     assert status["tone"] == "watch"
     assert "worth monitoring" in status["explanation"]
+
+
+def test_dashboard_status_does_not_recalculate_from_confidence_metadata():
+    core_lines = [
+        "- Core Signal Morning Brief - 2026-06-05 (2026-06-05) [Healthy]: Stable.",
+        "- Confidence: Low",
+        "- Confidence rationale: Sparse data.",
+        "- Recommended action: No action.",
+    ]
+
+    status = _dashboard_status(core_lines, [])
+
+    assert status["label"] == "Healthy"
+    assert status["tone"] == "healthy"
 
 
 def test_dashboard_status_marks_action_needed_for_actionable_recommendation():
