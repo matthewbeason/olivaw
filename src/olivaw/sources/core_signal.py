@@ -153,6 +153,7 @@ class CoreSignalSource:
             or data.get("findings")
             or data.get("worth_knowing")
         )
+        events = _coerce_events(data.get("events"))
         dns_findings = _coerce_findings(
             data.get("dns_findings")
             or data.get("dns_interpretation")
@@ -169,6 +170,7 @@ class CoreSignalSource:
             status_reason=status_reason,
             recommended_action=recommended_action,
             findings=findings,
+            events=events,
             dns_status=_first_present(
                 data.get("dns_status"),
                 _dict(data.get("dns")).get("status"),
@@ -199,6 +201,16 @@ class CoreSignalSource:
             sections, "Recommendation"
         )
         findings = _worth_knowing(sections) or _pattern_titles(text)
+        events = _markdown_events(
+            path=path,
+            title=title,
+            summary=summary,
+            status=status,
+            status_reason=status_reason,
+            recommended_action=recommended_action,
+            sections=sections,
+            text=text,
+        )
         dns_findings = _dns_findings(text, sections)
         report_type = (
             "pattern_report"
@@ -214,6 +226,7 @@ class CoreSignalSource:
             status_reason=status_reason,
             recommended_action=recommended_action,
             findings=findings,
+            events=events,
             dns_findings=dns_findings,
             preview=_preview(text),
             report_type=report_type,
@@ -373,6 +386,142 @@ def _coerce_findings(value: object) -> list[str]:
     if value:
         return [str(value)]
     return []
+
+
+def _coerce_events(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    events: list[dict[str, object]] = []
+    for raw in value:
+        event = _event_from_mapping(_dict(raw))
+        if event:
+            events.append(event)
+    return events[:5]
+
+
+def _event_from_mapping(data: dict[str, Any]) -> dict[str, object]:
+    if not data:
+        return {}
+    window_start = _first_present(
+        data.get("window_start"),
+        data.get("affected_window_start"),
+        _dict(data.get("affected_window")).get("start"),
+    )
+    window_end = _first_present(
+        data.get("window_end"),
+        data.get("affected_window_end"),
+        _dict(data.get("affected_window")).get("end"),
+    )
+    reference = _dict(
+        data.get("prime_observer_reference")
+        or data.get("investigation_reference")
+        or data.get("investigation")
+    )
+    investigation = _first_present(
+        data.get("prime_observer_investigation"),
+        data.get("investigation_url"),
+        data.get("investigation_reference"),
+        reference.get("url"),
+        reference.get("path"),
+    )
+    evidence_window = _dict(data.get("evidence_window"))
+    event: dict[str, object] = {
+        "id": str(data.get("id") or data.get("event_id") or ""),
+        "kind": str(
+            data.get("kind") or data.get("type") or data.get("event_type") or ""
+        ),
+        "status": str(data.get("status") or ""),
+        "severity": str(data.get("severity") or ""),
+        "confidence": str(data.get("confidence") or ""),
+        "window_start": window_start or "",
+        "window_end": window_end or "",
+        "summary": str(data.get("summary") or data.get("title") or ""),
+        "why": str(
+            data.get("why") or data.get("status_reason") or data.get("reason") or ""
+        ),
+        "recommended_action": str(
+            data.get("recommended_action") or data.get("recommendation") or ""
+        ),
+        "issue_location": str(data.get("issue_location") or data.get("location") or ""),
+        "attribution_source": str(data.get("attribution_source") or ""),
+        "prime_observer_investigation": investigation or "",
+        "prime_observer_reference": reference,
+        "evidence_window": evidence_window,
+    }
+    return {key: value for key, value in event.items() if value not in ("", {}, None)}
+
+
+def _markdown_events(
+    *,
+    path: Path,
+    title: str,
+    summary: str,
+    status: str,
+    status_reason: str | None,
+    recommended_action: str | None,
+    sections: dict[str, list[str]],
+    text: str,
+) -> list[dict[str, object]]:
+    technical = sections.get("Technical Evidence", [])
+    investigation = _bullet_value(technical, "Prime Observer investigation")
+    issue_location = _line_value(text, "Issue Location")
+    attribution_source = _bullet_value(technical, "Attribution source")
+    window = _bullet_value(technical, "Window")
+    if not any((investigation, issue_location, attribution_source, window)):
+        return []
+
+    event: dict[str, object] = {
+        "id": _line_value(text, "Event ID")
+        or _line_value(text, "Event Id")
+        or f"{path.stem}",
+        "kind": _line_value(text, "Event Kind")
+        or _line_value(text, "Event Type")
+        or "",
+        "status": status,
+        "severity": _severity_from_status(status),
+        "summary": summary,
+        "why": status_reason or "",
+        "recommended_action": recommended_action or "",
+        "issue_location": issue_location or "",
+        "attribution_source": attribution_source or "",
+        "prime_observer_investigation": investigation or "",
+        "evidence_window": {"label": window} if window else {},
+    }
+    if window:
+        start, end = _split_window(window)
+        if start:
+            event["window_start"] = start
+        if end:
+            event["window_end"] = end
+    return [{key: value for key, value in event.items() if value not in ("", {}, None)}]
+
+
+def _bullet_value(lines: list[str], label: str) -> str | None:
+    prefix = f"- {label}:"
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            value = stripped.removeprefix(prefix).strip()
+            return value or None
+    return None
+
+
+def _split_window(value: str) -> tuple[str | None, str | None]:
+    start, separator, end = value.partition(" to ")
+    if not separator:
+        return value.strip() or None, None
+    return start.strip() or None, end.strip() or None
+
+
+def _severity_from_status(status: str) -> str:
+    key = status.strip().lower()
+    if key == "attention":
+        return "attention"
+    if key == "watch":
+        return "watch"
+    if key == "healthy":
+        return "none"
+    return key or "unknown"
 
 
 def _first_present(*values: object) -> str | None:

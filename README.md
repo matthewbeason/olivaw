@@ -341,6 +341,7 @@ viz/
   latest.csv
   network_attribution.json
   nextdns_summary.json
+  investigation.json
 ```
 
 Structured JSON is preferred when available. `network_attribution.json` is used
@@ -349,9 +350,12 @@ latest sample timestamp and raw p95/loss facts. `nextdns_summary.json` is used
 for DNS summary availability and raw DNS counts, plus top blocked/resolved
 domains when Prime Observer exports them. Redacted DNS entities are labeled as
 redacted; Olivaw does not treat `entity_1`-style placeholders as meaningful
-briefing facts. Markdown and text reports are read as short previews. Missing
-directories, empty directories, disabled configuration, and malformed files
-degrade through source health/status instead of crashing.
+briefing facts. `investigation.json`, when present, is recognized only as a
+Prime Observer investigation export with event/context window metadata. Olivaw
+does not copy the historical timeline, before/during/after evidence view, or raw
+evidence tables into the briefing. Markdown and text reports are read as short
+previews. Missing directories, empty directories, disabled configuration, and
+malformed files degrade through source health/status instead of crashing.
 
 CoreSignalSource reads Core Signal outputs without modifying Core Signal. Core
 Signal remains the authoritative interpretation layer; Olivaw consumes and
@@ -380,17 +384,39 @@ read as concise interpretation summaries and noteworthy pattern titles. Missing
 directories, empty directories, disabled configuration, and malformed files
 degrade through source health/status instead of crashing.
 
+Core Signal can also emit interpreted event metadata for downstream consumers.
+Olivaw preserves those fields instead of flattening them away. Supported event
+fields include stable event id, event kind/type, status/severity, confidence,
+affected window, summary, why/status reasoning, recommended action, issue
+location, attribution source, Prime Observer investigation reference, and
+evidence-window metadata. Current Markdown morning briefs expose the same
+information through fields such as `Issue Location`, `Technical Evidence`,
+`Window`, `Prime Observer investigation`, and `Attribution source`.
+
+Event-aware source briefings present the Core Signal interpretation and provide
+navigation to Prime Observer when Core Signal includes an investigation
+reference. The `/briefing` dashboard shows the event summary, severity/status,
+affected window, confidence when available, issue location, recommended action,
+and a `View investigation` affordance. Absolute `http` or `https` Prime Observer
+references become links. Local references such as
+`viz/investigate.html?start=...&end=...` are shown as text so Olivaw does not
+create broken links or imply it owns the Prime Observer evidence view.
+
 Prime Observer and Core Signal stay separate:
 
 - Prime Observer answers: "What happened?"
 - Core Signal answers: "What does it mean?"
-- Olivaw answers: "What should I know?"
+- Olivaw answers: "What should I know, and where should I navigate?"
 
 Source-backed briefings preserve that separation. The Prime Observer section is
 current-state focused: latest sample timestamp, current LAN/WAN state, current
 network attribution/status, DNS summary availability, and raw DNS facts. The
 Core Signal section owns status reasoning, recommendations, worth-knowing
-interpretation, trends, patterns, and DNS interpretation.
+interpretation, trends, patterns, DNS interpretation, and event summaries.
+Olivaw is the presenter and navigator: it surfaces Core Signal's interpreted
+events and points to Prime Observer investigation references without performing
+the interpretation itself or duplicating Prime Observer's historical evidence
+view.
 
 WeatherSource, CalendarSource, EmailSource, and source aggregation are roadmap
 items only. They are not integrated yet.
@@ -549,7 +575,8 @@ olivaw brief-sources
 It currently uses ManualSource, FileSource, PrimeObserverSource, and
 CoreSignalSource. The output includes source status, source-backed highlights,
 file previews, a current-state Prime Observer section, an interpretation-focused
-Core Signal section, source notes, and attribution such as:
+Core Signal section, event-aware Core Signal findings when emitted, source
+notes, and attribution such as:
 
 ```text
 This briefing is source-backed using: manual, files, prime_observer, core_signal.

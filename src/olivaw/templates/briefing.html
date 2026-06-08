@@ -71,6 +71,51 @@
       </ul>
     </article>
 
+    <article class="briefing-card accent-red event-card">
+      <p class="card-label">Core Signal Events</p>
+      <span class="category-chip">Category: event</span>
+      <h2>Interpreted events</h2>
+      {% for event in dashboard.core_signal_events %}
+        <section class="event-item">
+          <h3>{{ event.summary }}</h3>
+          <dl class="event-meta">
+            {% if event.severity_status %}
+              <dt>Severity/status</dt>
+              <dd>{{ event.severity_status }}</dd>
+            {% endif %}
+            {% if event.affected_window %}
+              <dt>Affected window</dt>
+              <dd>{{ event.affected_window }}</dd>
+            {% endif %}
+            {% if event.confidence %}
+              <dt>Confidence</dt>
+              <dd>{{ event.confidence }}</dd>
+            {% endif %}
+            {% if event.issue_location %}
+              <dt>Issue location</dt>
+              <dd>{{ event.issue_location }}</dd>
+            {% endif %}
+            {% if event.recommended_action %}
+              <dt>Recommended action</dt>
+              <dd>{{ event.recommended_action }}</dd>
+            {% endif %}
+            {% if event.investigation_reference %}
+              <dt>Investigation</dt>
+              <dd>
+                {% if event.investigation_href %}
+                  <a href="{{ event.investigation_href }}">View investigation</a>
+                {% else %}
+                  View investigation: {{ event.investigation_reference }}
+                {% endif %}
+              </dd>
+            {% endif %}
+          </dl>
+        </section>
+      {% else %}
+        <p class="card-copy">No interpreted Core Signal events are available.</p>
+      {% endfor %}
+    </article>
+
     <article class="briefing-card accent-orange">
       <p class="card-label">DNS Activity</p>
       <span class="category-chip">Category: DNS</span>

@@ -138,6 +138,59 @@ def test_cli_brief_sources_accepts_markdown_format(monkeypatch, tmp_path, capsys
     assert "# Source Briefing" in captured.out
 
 
+def test_cli_brief_sources_outputs_core_signal_event_metadata(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    core_dir = tmp_path / "core"
+    prime_dir = tmp_path / "prime"
+    core_dir.mkdir()
+    prime_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    (core_dir / "latest.md").write_text(
+        """# Core Signal Morning Brief - 2026-06-08
+
+Status: Attention
+
+The network had 1 sustained slowdown period(s).
+
+Why This Status:
+Sustained slowdown was detected.
+
+Issue Location: Likely upstream/ISP issue
+
+Recommended Action: Check provider status if symptoms matched.
+
+Technical Evidence:
+- Window: 2026-06-08T11:11:30+00:00 to 2026-06-08T11:12:09+00:00
+- Prime Observer investigation: viz/investigate.html?start=1&end=2
+- Attribution source: Prime Observer incident attribution
+""",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["brief-sources"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Event: The network had 1 sustained slowdown period(s)." in captured.out
+    assert "Severity/status: Attention / attention" in captured.out
+    assert (
+        "Affected window: 2026-06-08T11:11:30+00:00 "
+        "to 2026-06-08T11:12:09+00:00"
+    ) in captured.out
+    assert (
+        "Recommended action: Check provider status if symptoms matched."
+        in captured.out
+    )
+    assert "Issue location: Likely upstream/ISP issue" in captured.out
+    assert "View investigation: viz/investigate.html?start=1&end=2" in captured.out
+
+
 def test_cli_brief_input_still_outputs_fixture_briefing(capsys):
     exit_code = main(["brief", "--input", "examples/daily_context.json"])
     captured = capsys.readouterr()

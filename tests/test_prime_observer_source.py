@@ -64,6 +64,42 @@ def test_prime_observer_source_loads_latest_csv_summary(tmp_path):
     assert payload["items"][0]["latest_sample_timestamp"] == "2026-06-04T00:00:00-07:00"
 
 
+def test_prime_observer_source_preserves_investigation_window_without_evidence(
+    tmp_path,
+):
+    (tmp_path / "investigation.json").write_text(
+        """
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-08T18:00:00+00:00",
+  "event_window": {
+    "start": "2026-06-08T11:11:30+00:00",
+    "end": "2026-06-08T11:12:09+00:00",
+    "context_start": "2026-06-08T10:41:30+00:00",
+    "context_end": "2026-06-08T11:42:09+00:00"
+  },
+  "periods": {
+    "during": {"wan": {"sample_count": 20}}
+  },
+  "timeline_samples": [
+    {"ts": "2026-06-08T11:11:30+00:00", "p95_ms": 200}
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    payload = PrimeObserverSource(directory=tmp_path).fetch()
+
+    item = payload["items"][0]
+    assert item["report_type"] == "investigation"
+    assert item["title"] == "Prime Observer investigation export"
+    assert item["investigation_start"] == "2026-06-08T11:11:30+00:00"
+    assert item["investigation_end"] == "2026-06-08T11:12:09+00:00"
+    assert "timeline_samples" not in item
+    assert "periods" not in item
+
+
 def test_prime_observer_source_surfaces_top_dns_domains(tmp_path):
     _write_nextdns_summary(
         tmp_path / "nextdns_summary.json",

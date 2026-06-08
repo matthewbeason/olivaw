@@ -88,6 +88,63 @@ def test_core_signal_source_loads_valid_json_report(tmp_path):
     assert "DNS filtering looked normal." in item["findings"]
 
 
+def test_core_signal_source_preserves_json_event_metadata(tmp_path):
+    (tmp_path / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "date": "2026-06-08",
+  "status": "Attention",
+  "summary": "The network had 1 sustained slowdown period.",
+  "events": [
+    {
+      "id": "core-signal-sustained_slowdown-abc123",
+      "kind": "sustained_slowdown",
+      "status": "Attention",
+      "severity": "attention",
+      "confidence": "High",
+      "window_start": "2026-06-08T11:11:30+00:00",
+      "window_end": "2026-06-08T11:12:09+00:00",
+      "summary": "1 sustained slowdown period was found.",
+      "why": "Sustained slowdown was detected.",
+      "recommended_action": "Check provider status if symptoms matched.",
+      "issue_location": "Likely upstream/ISP issue",
+      "attribution_source": "prime_observer_incident",
+      "prime_observer_reference": {
+        "type": "event",
+        "url": "http://127.0.0.1:8000/investigate.html?start=1&end=2",
+        "window_start": "2026-06-08T11:11:30+00:00",
+        "window_end": "2026-06-08T11:12:09+00:00"
+      },
+      "evidence_window": {
+        "source": "prime_observer",
+        "window_start": "2026-06-08T11:11:30+00:00",
+        "window_end": "2026-06-08T11:12:09+00:00",
+        "granularity": "15-minute bucket"
+      }
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    payload = CoreSignalSource(directory=tmp_path).fetch()
+
+    event = payload["items"][0]["events"][0]
+    assert event["id"] == "core-signal-sustained_slowdown-abc123"
+    assert event["kind"] == "sustained_slowdown"
+    assert event["severity"] == "attention"
+    assert event["confidence"] == "High"
+    assert event["window_start"] == "2026-06-08T11:11:30+00:00"
+    assert event["window_end"] == "2026-06-08T11:12:09+00:00"
+    assert event["recommended_action"] == "Check provider status if symptoms matched."
+    assert event["issue_location"] == "Likely upstream/ISP issue"
+    assert event["attribution_source"] == "prime_observer_incident"
+    assert event["prime_observer_investigation"].startswith("http://127.0.0.1:8000/")
+    assert event["evidence_window"]["granularity"] == "15-minute bucket"
+
+
 def test_core_signal_source_loads_markdown_morning_brief(tmp_path):
     (tmp_path / "latest.md").write_text(_morning_brief(), encoding="utf-8")
 
@@ -106,6 +163,25 @@ def test_core_signal_source_loads_markdown_morning_brief(tmp_path):
     assert "Performance was slower than usual." in item["findings"]
     assert item["dns_findings"] == ["DNS filtering looked normal."]
     assert item["report_type"] == "morning_brief"
+
+
+def test_core_signal_source_parses_markdown_event_metadata(tmp_path):
+    (tmp_path / "latest.md").write_text(_event_morning_brief(), encoding="utf-8")
+
+    payload = CoreSignalSource(directory=tmp_path).fetch()
+
+    event = payload["items"][0]["events"][0]
+    assert event["id"] == "latest"
+    assert event["status"] == "Attention"
+    assert event["severity"] == "attention"
+    assert event["summary"] == "The network had 1 sustained slowdown period(s)."
+    assert event["window_start"] == "2026-06-07 11:00 UTC-07:00"
+    assert event["window_end"] == "2026-06-08 11:00 UTC-07:00"
+    assert event["recommended_action"] == "Check provider status if symptoms matched."
+    assert event["issue_location"] == "Likely upstream/ISP issue"
+    assert event["attribution_source"] == "Prime Observer incident attribution"
+    assert event["prime_observer_investigation"].startswith("viz/investigate.html?")
+    assert event["evidence_window"]["label"].startswith("2026-06-07 11:00")
 
 
 def test_core_signal_source_loads_markdown_pattern_report(tmp_path):
@@ -185,6 +261,28 @@ def test_source_briefing_includes_core_signal_section(tmp_path):
     assert "This briefing is source-backed using: core_signal." in briefing.text
 
 
+def test_source_briefing_renders_core_signal_event_metadata(tmp_path):
+    (tmp_path / "latest.md").write_text(_event_morning_brief(), encoding="utf-8")
+    registry = SourceRegistry()
+    registry.register(CoreSignalSource(directory=tmp_path))
+
+    briefing = compose_source_briefing(registry=registry)
+
+    assert "Event: The network had 1 sustained slowdown period(s)." in briefing.text
+    assert "Severity/status: Attention / attention" in briefing.text
+    assert (
+        "Affected window: 2026-06-07 11:00 UTC-07:00 to 2026-06-08 11:00 UTC-07:00"
+        in briefing.text
+    )
+    assert (
+        "Recommended action: Check provider status if symptoms matched."
+        in briefing.text
+    )
+    assert "Issue location: Likely upstream/ISP issue" in briefing.text
+    assert "Attribution source: Prime Observer incident attribution" in briefing.text
+    assert "View investigation: viz/investigate.html?start=1&end=2" in briefing.text
+
+
 def test_source_briefing_keeps_prime_observer_and_core_signal_semantics_separate(
     tmp_path,
 ):
@@ -225,6 +323,32 @@ Recommended Action: No action unless people noticed issues.
 Worth knowing:
 - Performance was slower than usual.
 - DNS filtering looked normal.
+"""
+
+
+def _event_morning_brief() -> str:
+    return """# Core Signal Morning Brief - 2026-06-08
+
+Status: Attention
+
+The network had 1 sustained slowdown period(s).
+
+Why This Status:
+Sustained slowdown was detected, which means user impact was possible.
+
+Issue Location: Likely upstream/ISP issue
+
+Recommended Action: Check provider status if symptoms matched.
+
+Worth knowing:
+- 1 sustained slowdown period(s) were found.
+- Evidence points to an upstream/ISP issue.
+
+Technical Evidence:
+- Window: 2026-06-07 11:00 UTC-07:00 to 2026-06-08 11:00 UTC-07:00
+- Prime Observer investigation: viz/investigate.html?start=1&end=2
+- Attribution source: Prime Observer incident attribution
+- Prime Observer policy: v0.5.0-aligned
 """
 
 

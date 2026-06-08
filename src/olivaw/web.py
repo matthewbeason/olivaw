@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
@@ -115,6 +116,7 @@ def _briefing_dashboard(
     )
     dns = _ordered_dns_facts(dns)
     dns_details = _dns_detail_lines(prime_lines)
+    events = _core_signal_events(core_lines)
     core = _important_lines(
         core_lines,
         include=(
@@ -125,7 +127,7 @@ def _briefing_dashboard(
             "window",
             "dns interpretation",
         ),
-        exclude=("recommended action",),
+        exclude=("recommended action", "event id", "event kind", "view investigation"),
         limit=5,
     )
 
@@ -143,6 +145,7 @@ def _briefing_dashboard(
         "dns_activity": dns,
         "dns_details": dns_details,
         "core_signal_findings": core,
+        "core_signal_events": events,
         "source_details": source_lines,
     }
 
@@ -349,6 +352,55 @@ def _dns_detail_lines(lines: list[str]) -> list[str]:
         if line and line not in deduped:
             deduped.append(line)
     return deduped
+
+
+def _core_signal_events(lines: list[str]) -> list[dict[str, str]]:
+    events: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        if cleaned.startswith("Core Signal "):
+            current = None
+            continue
+        label, separator, value = cleaned.partition(":")
+        if not separator:
+            continue
+        key = label.strip().lower()
+        value = value.strip()
+        if key == "event":
+            current = {"summary": value}
+            events.append(current)
+            continue
+        if current is None:
+            continue
+        if key == "event id":
+            current["event_id"] = value
+        elif key == "event kind":
+            current["kind"] = value
+        elif key == "severity/status":
+            current["severity_status"] = value
+        elif key == "affected window":
+            current["affected_window"] = value
+        elif key == "confidence":
+            current["confidence"] = value
+        elif key == "recommended action":
+            current["recommended_action"] = value
+        elif key == "issue location":
+            current["issue_location"] = value
+        elif key == "attribution source":
+            current["attribution_source"] = value
+        elif key == "view investigation":
+            current["investigation_reference"] = value
+            if _is_external_url(value):
+                current["investigation_href"] = value
+        elif key == "evidence window":
+            current["evidence_window"] = value
+    return events[:5]
+
+
+def _is_external_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _strip_parenthetical_metric(line: str) -> str:

@@ -9,7 +9,12 @@ from typing import Any
 
 from olivaw.sources.base import SourceHealth, SourcePayload
 
-JSON_PRIORITY = ("network_attribution.json", "nextdns_summary.json", "latest.json")
+JSON_PRIORITY = (
+    "network_attribution.json",
+    "nextdns_summary.json",
+    "investigation.json",
+    "latest.json",
+)
 SUPPORTED_EXTENSIONS = {".json", ".md", ".txt", ".csv"}
 PREVIEW_CHARS = 600
 
@@ -149,6 +154,8 @@ class PrimeObserverSource:
             return _network_attribution_item(path, data)
         if path.name == "nextdns_summary.json":
             return _nextdns_item(path, data)
+        if path.name == "investigation.json":
+            return _investigation_item(path, data)
         return _generic_json_item(path, data)
 
     def _csv_item(self, path: Path) -> dict[str, object]:
@@ -323,6 +330,27 @@ def _nextdns_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
         top_domain_entity=top_entity or "unavailable",
         findings=findings,
         report_type="nextdns_summary",
+    )
+
+
+def _investigation_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
+    event_window = _dict(data.get("event_window"))
+    start = event_window.get("start") or _dict(data.get("input")).get("start")
+    end = event_window.get("end") or _dict(data.get("input")).get("end")
+    summary = "Prime Observer investigation export is available."
+    if start and end:
+        summary = f"Prime Observer investigation export covers {start} to {end}."
+    return _base_item(
+        path=path,
+        title="Prime Observer investigation export",
+        summary=summary,
+        report_date=str(data.get("generated_at") or _modified(path)),
+        status="ok",
+        investigation_start=str(start or ""),
+        investigation_end=str(end or ""),
+        investigation_context_start=str(event_window.get("context_start") or ""),
+        investigation_context_end=str(event_window.get("context_end") or ""),
+        report_type="investigation",
     )
 
 

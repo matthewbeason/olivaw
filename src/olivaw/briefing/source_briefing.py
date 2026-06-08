@@ -206,6 +206,10 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
             status = str(item.get("status") or "unknown")
             summary = _one_line_preview(str(item.get("summary") or "No summary."))
             lines.append(f"- {title} ({report_date}) [{status}]: {summary}")
+            events = item.get("events", [])
+            if isinstance(events, list):
+                for event in [event for event in events if isinstance(event, dict)][:3]:
+                    lines.extend(_core_signal_event_lines(event))
             status_reason = str(item.get("status_reason") or "").strip()
             if status_reason:
                 lines.append(f"  - Why/status reasoning: {status_reason}")
@@ -231,6 +235,97 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
                 lines.append(f"  - DNS recommended action: {dns_action}")
         return lines
     return []
+
+
+def _core_signal_event_lines(event: dict[str, object]) -> list[str]:
+    summary = _one_line_preview(str(event.get("summary") or "Core Signal event."))
+    lines = [f"  - Event: {summary}"]
+    event_id = str(event.get("id") or "").strip()
+    if event_id:
+        lines.append(f"    - Event ID: {event_id}")
+    kind = str(event.get("kind") or "").strip()
+    if kind:
+        lines.append(f"    - Event kind: {kind}")
+    status = str(event.get("status") or "").strip()
+    severity = str(event.get("severity") or "").strip()
+    if status or severity:
+        label = status or "unknown"
+        if severity:
+            label = f"{label} / {severity}"
+        lines.append(f"    - Severity/status: {label}")
+    affected = _event_window_label(event)
+    if affected:
+        lines.append(f"    - Affected window: {affected}")
+    confidence = str(event.get("confidence") or "").strip()
+    if confidence:
+        lines.append(f"    - Confidence: {confidence}")
+    why = str(event.get("why") or "").strip()
+    if why:
+        lines.append(f"    - Why/status reasoning: {why}")
+    issue_location = str(event.get("issue_location") or "").strip()
+    if issue_location:
+        lines.append(f"    - Issue location: {issue_location}")
+    recommended_action = str(event.get("recommended_action") or "").strip()
+    if recommended_action:
+        lines.append(f"    - Recommended action: {recommended_action}")
+    attribution = str(event.get("attribution_source") or "").strip()
+    if attribution:
+        lines.append(f"    - Attribution source: {_source_label(attribution)}")
+    investigation = _investigation_reference(event)
+    if investigation:
+        lines.append(f"    - View investigation: {investigation}")
+    evidence = _evidence_window_label(event)
+    if evidence:
+        lines.append(f"    - Evidence window: {evidence}")
+    return lines
+
+
+def _event_window_label(event: dict[str, object]) -> str:
+    start = str(event.get("window_start") or "").strip()
+    end = str(event.get("window_end") or "").strip()
+    if start and end:
+        return f"{start} to {end}"
+    return start or end
+
+
+def _evidence_window_label(event: dict[str, object]) -> str:
+    evidence = event.get("evidence_window")
+    if not isinstance(evidence, dict):
+        return ""
+    label = str(evidence.get("label") or "").strip()
+    if label:
+        return label
+    start = str(evidence.get("window_start") or "").strip()
+    end = str(evidence.get("window_end") or "").strip()
+    granularity = str(evidence.get("granularity") or "").strip()
+    pieces = []
+    if start and end:
+        pieces.append(f"{start} to {end}")
+    elif start or end:
+        pieces.append(start or end)
+    if granularity:
+        pieces.append(granularity)
+    return "; ".join(pieces)
+
+
+def _investigation_reference(event: dict[str, object]) -> str:
+    reference = event.get("prime_observer_reference")
+    if isinstance(reference, dict):
+        for key in ("url", "path", "id"):
+            value = str(reference.get(key) or "").strip()
+            if value:
+                return value
+    return str(event.get("prime_observer_investigation") or "").strip()
+
+
+def _source_label(value: str) -> str:
+    labels = {
+        "prime_observer_incident": "Prime Observer incident attribution",
+        "prime_observer_window": "Prime Observer window attribution",
+        "prime_observer_current": "Prime Observer current attribution",
+        "core_signal_fallback": "Core Signal fallback",
+    }
+    return labels.get(value, value)
 
 
 def _prime_network_lines(item: dict[str, object]) -> list[str]:

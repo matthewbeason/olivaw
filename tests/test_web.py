@@ -131,11 +131,13 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "Network Status" in response.text
     assert "DNS Activity" in response.text
     assert "Core Signal Findings" in response.text
+    assert "Core Signal Events" in response.text
     assert "Category: context" in response.text
     assert "Category: action" in response.text
     assert "Category: network" in response.text
     assert "Category: DNS" in response.text
     assert "Category: interpretation" in response.text
+    assert "Category: event" in response.text
     assert "Show raw briefing" in response.text
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
@@ -204,6 +206,109 @@ This briefing is source-backed using: prime_observer, core_signal.
         dashboard["dns_details"]
     )
     assert dashboard["sources"] == ("prime_observer", "core_signal")
+
+
+def test_briefing_dashboard_extracts_core_signal_events_and_safe_references():
+    dashboard = _briefing_dashboard(
+        """# Source Briefing
+
+## Core Signal
+- Core Signal Morning Brief - 2026-06-08 (2026-06-08) [Attention]: Slowdown.
+  - Event: 1 sustained slowdown period was found.
+    - Event ID: core-signal-sustained_slowdown-abc123
+    - Event kind: sustained_slowdown
+    - Severity/status: Attention / attention
+    - Affected window: 2026-06-08T11:11:30+00:00 to 2026-06-08T11:12:09+00:00
+    - Confidence: High
+    - Issue location: Likely upstream/ISP issue
+    - Recommended action: Check provider status if symptoms matched.
+    - Attribution source: Prime Observer incident attribution
+    - View investigation: viz/investigate.html?start=1&end=2
+
+## Attribution
+This briefing is source-backed using: core_signal.
+""",
+        "2026-06-08T18:00:00+00:00",
+        ("core_signal",),
+    )
+
+    event = dashboard["core_signal_events"][0]
+    assert event["summary"] == "1 sustained slowdown period was found."
+    assert event["severity_status"] == "Attention / attention"
+    assert event["affected_window"] == (
+        "2026-06-08T11:11:30+00:00 to 2026-06-08T11:12:09+00:00"
+    )
+    assert event["confidence"] == "High"
+    assert event["recommended_action"] == "Check provider status if symptoms matched."
+    assert event["investigation_reference"] == "viz/investigate.html?start=1&end=2"
+    assert "investigation_href" not in event
+
+
+def test_briefing_dashboard_links_absolute_prime_observer_investigation_url():
+    dashboard = _briefing_dashboard(
+        """# Source Briefing
+
+## Core Signal
+- Core Signal Morning Brief - 2026-06-08 (2026-06-08) [Attention]: Slowdown.
+  - Event: 1 sustained slowdown period was found.
+    - View investigation: http://127.0.0.1:8000/investigate.html?start=1&end=2
+""",
+        "2026-06-08T18:00:00+00:00",
+        ("core_signal",),
+    )
+
+    event = dashboard["core_signal_events"][0]
+    assert event["investigation_href"] == (
+        "http://127.0.0.1:8000/investigate.html?start=1&end=2"
+    )
+
+
+def test_briefing_route_renders_core_signal_event_without_broken_local_link(
+    monkeypatch,
+    tmp_path,
+):
+    for name in ("OLIVAW_CONFIG", "OLIVAW_FILES_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    core_dir = tmp_path / "core"
+    prime_dir = tmp_path / "prime"
+    core_dir.mkdir()
+    prime_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    (core_dir / "latest.md").write_text(
+        """# Core Signal Morning Brief - 2026-06-08
+
+Status: Attention
+
+The network had 1 sustained slowdown period(s).
+
+Why This Status:
+Sustained slowdown was detected.
+
+Issue Location: Likely upstream/ISP issue
+
+Recommended Action: Check provider status if symptoms matched.
+
+Technical Evidence:
+- Window: 2026-06-08T11:11:30+00:00 to 2026-06-08T11:12:09+00:00
+- Prime Observer investigation: viz/investigate.html?start=1&end=2
+- Attribution source: Prime Observer incident attribution
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Interpreted events" in response.text
+    assert "The network had 1 sustained slowdown period(s)." in response.text
+    assert "Severity/status" in response.text
+    assert "Attention / attention" in response.text
+    assert "Affected window" in response.text
+    assert "Confidence" not in response.text
+    assert "View investigation: viz/investigate.html?start=1&amp;end=2" in response.text
+    assert 'href="viz/investigate.html?start=1&amp;end=2"' not in response.text
 
 
 def test_human_generated_time_formats_relative_and_today():
