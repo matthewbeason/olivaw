@@ -3,7 +3,7 @@
   <h1>Sources</h1>
   <p>Registered structured knowledge sources available to Olivaw.</p>
 
-  <section class="grid">
+  <section class="grid source-grid">
     {% for source in report.sources %}
       <div class="card">
         <h2>{{ source.display_name }}</h2>
@@ -14,7 +14,32 @@
         </dl>
         {% for payload in report.data %}
           {% if payload["source"] == source.source_id and "count" in payload %}
+            {% if payload.root %}
+              <p>Source path: <code>{{ payload.root }}</code></p>
+            {% endif %}
             <p>File count: {{ payload["count"] }}</p>
+            {% if payload.diagnostics %}
+              <dl>
+                {% if payload.diagnostics.selection %}
+                  <dt>Selection</dt><dd>{{ payload.diagnostics.selection }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_index %}
+                  <dt>Investigation index</dt>
+                  <dd>{{ payload.diagnostics.investigation_index }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.interpreted_events %}
+                  <dt>Interpreted events</dt>
+                  <dd>{{ payload.diagnostics.interpreted_events }}</dd>
+                {% endif %}
+              </dl>
+            {% endif %}
+            {% if payload.errors %}
+              <ul class="clean-list">
+                {% for error in payload.errors %}
+                  <li>Load error: {{ error }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
           {% endif %}
         {% endfor %}
       </div>
@@ -23,7 +48,7 @@
 
   <h2>Example Source Output</h2>
   {% for payload in report.data %}
-    <div class="card">
+    <div class="card source-output">
       <dl>
         <dt>Source</dt><dd>{{ payload["source"] }}</dd>
         <dt>Status</dt><dd>{{ payload["status"] }}</dd>
@@ -37,6 +62,70 @@
             <strong>{{ item.title }}</strong>
             {% if item.path %}<span>({{ item.path }})</span>{% endif %}
             <p>{{ item.summary or item.preview }}</p>
+            {% if item.report_type == "investigation_index" %}
+              <p>Investigation entries: {{ item.investigation_catalog | length }}</p>
+              <ul>
+                {% for investigation in item.investigation_catalog %}
+                  <li>
+                    {{ investigation.title or investigation.id or "Investigation" }}
+                    {% if investigation.status %}- {{ investigation.status }}{% endif %}
+                    {% if investigation.path %}<br><code>{{ investigation.path }}</code>{% endif %}
+                  </li>
+                {% else %}
+                  <li>No investigations are listed in the loaded index.</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            {% if item.events is defined %}
+              <p>Interpreted events: {{ item.events | length }}</p>
+              <ul>
+                {% for event in item.events %}
+                  <li>
+                    <strong>{{ event.summary or event.id or "Core Signal event" }}</strong>
+                    <dl>
+                      {% if event.confidence %}
+                        <dt>Confidence</dt><dd>{{ event.confidence }}</dd>
+                      {% endif %}
+                      {% if event.confidence_reason %}
+                        <dt>Why</dt><dd>{{ event.confidence_reason }}</dd>
+                      {% endif %}
+                      {% if event.supporting_facts %}
+                        <dt>Supporting facts</dt>
+                        <dd>{{ event.supporting_facts | length }}</dd>
+                      {% endif %}
+                      {% if event.recommendation_trace %}
+                        <dt>Recommendation trace</dt>
+                        <dd>{{ event.recommendation_trace | length }}</dd>
+                      {% endif %}
+                      {% if event.interpretation_source %}
+                        <dt>Interpretation</dt>
+                        <dd>
+                          {% if event.interpretation_source == "core_signal" %}
+                            Core Signal
+                          {% else %}
+                            {{ event.interpretation_source }}
+                          {% endif %}
+                        </dd>
+                      {% endif %}
+                      {% if event.attribution_source %}
+                        <dt>Evidence</dt>
+                        <dd>
+                          {% if "prime_observer" in event.attribution_source %}
+                            Prime Observer
+                          {% elif "core_signal" in event.attribution_source %}
+                            Core Signal
+                          {% else %}
+                            {{ event.attribution_source }}
+                          {% endif %}
+                        </dd>
+                      {% endif %}
+                    </dl>
+                  </li>
+                {% else %}
+                  <li>No interpreted event objects were found in this report.</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
           </li>
         {% endfor %}
       </ul>

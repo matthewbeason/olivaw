@@ -81,6 +81,16 @@
         border-radius: 8px;
         padding: 16px;
       }
+      .source-grid {
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      }
+      .source-output {
+        margin-top: 12px;
+      }
+      code {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
       .status {
         display: inline-block;
         border-radius: 999px;
@@ -296,6 +306,28 @@
         color: #303033;
         font-weight: 500;
       }
+      .attribution-triad {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin: 0 0 14px;
+      }
+      .attribution-triad div {
+        background: var(--soft-panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .attribution-triad dt {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .attribution-triad dd {
+        color: #303033;
+        font-weight: 650;
+        margin-top: 2px;
+      }
       .details-stack {
         display: grid;
         gap: 12px;
@@ -351,6 +383,7 @@
         }
         .summary-meta { grid-template-columns: 1fr; }
         .briefing-grid { grid-template-columns: 1fr; }
+        .attribution-triad { grid-template-columns: 1fr; }
         .briefing-card,
         .briefing-card:first-child,
         .briefing-card:nth-child(2) {

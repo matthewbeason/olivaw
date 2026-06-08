@@ -3,8 +3,16 @@ from __future__ import annotations
 import pytest
 
 from olivaw.bootstrap import init_data
-from olivaw.config import OlivawConfig
-from olivaw.config import FileSourceConfig
+from olivaw.capabilities.sources import (
+    SourceInspectionCapability,
+    format_sources_report,
+)
+from olivaw.config import (
+    CoreSignalSourceConfig,
+    FileSourceConfig,
+    OlivawConfig,
+    PrimeObserverSourceConfig,
+)
 from olivaw.sources import FileSource, ManualSource, SourceRegistry, create_default_registry
 from olivaw.sources.registry import inspect_sources
 
@@ -80,6 +88,78 @@ def test_inspect_sources_returns_status_and_sample_data(tmp_path):
     assert report["sources"][3]["source_id"] == "core_signal"
     assert report["data"][0]["items"][0]["title"] == "Example item"
     assert report["data"][1]["count"] == 3
+
+
+def test_sources_report_distinguishes_investigation_index_load_status(tmp_path):
+    prime_dir = tmp_path / "prime"
+    prime_dir.mkdir()
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "id": "inv-20260608",
+    "title": "June 8 WAN samples",
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    config = OlivawConfig(
+        files=FileSourceConfig(directory=tmp_path / "files"),
+        prime_observer=PrimeObserverSourceConfig(directory=prime_dir),
+    )
+
+    report = SourceInspectionCapability().run(config=config)
+    text = format_sources_report(report)
+
+    assert "Root: " in text
+    assert "Investigation index: loaded from" in text
+    assert "Investigation entries: 1" in text
+    assert "Investigation: June 8 WAN samples (viz/investigation.json)" in text
+
+
+def test_sources_report_surfaces_core_signal_event_metadata(tmp_path):
+    core_dir = tmp_path / "core"
+    core_dir.mkdir()
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Attention",
+  "summary": "The network had 1 sustained slowdown period.",
+  "events": [
+    {
+      "id": "core-signal-sustained_slowdown-abc123",
+      "summary": "1 sustained slowdown period was found.",
+      "confidence": "0.82",
+      "confidence_reason": "Matched sustained slowdown threshold.",
+      "supporting_facts": [
+        {"summary": "WAN p95 exceeded threshold.", "source": "prime_observer"}
+      ],
+      "interpretation_source": "core_signal",
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    config = OlivawConfig(
+        files=FileSourceConfig(directory=tmp_path / "files"),
+        core_signal=CoreSignalSourceConfig(directory=core_dir),
+    )
+
+    report = SourceInspectionCapability().run(config=config)
+    text = format_sources_report(report)
+
+    assert "Interpreted events: 1 interpreted event(s) loaded" in text
+    assert "Interpreted events: 1" in text
+    assert "Event: 1 sustained slowdown period was found." in text
+    assert "Confidence: 0.82" in text
+    assert "Supporting facts: 1" in text
+    assert "Why: Matched sustained slowdown threshold." in text
 
 
 def test_file_source_scans_supported_files(tmp_path):

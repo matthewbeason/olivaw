@@ -103,6 +103,81 @@ def test_sources_route_renders_registered_sources():
     assert "Demonstrates source plumbing." in response.text
 
 
+def test_sources_route_renders_investigations_events_and_metadata(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "id": "inv-20260608",
+    "title": "June 8 WAN samples",
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Attention",
+  "summary": "The network had 1 sustained slowdown period.",
+  "events": [
+    {
+      "summary": "1 sustained slowdown period was found.",
+      "confidence": "0.82",
+      "confidence_reason": "Matched sustained slowdown threshold.",
+      "supporting_facts": [
+        {"summary": "WAN p95 exceeded threshold.", "source": "prime_observer"}
+      ],
+      "recommendation_trace": {
+        "recommendation": "Check provider status if symptoms matched.",
+        "interpretation": "Core Signal classified the event."
+      },
+      "interpretation_source": "core_signal",
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/sources")
+
+    assert response.status_code == 200
+    assert "Source path:" in response.text
+    assert "Investigation index" in response.text
+    assert "loaded from" in response.text
+    assert "Investigation entries: 1" in response.text
+    assert "June 8 WAN samples" in response.text
+    assert "Interpreted events" in response.text
+    assert "1 interpreted event(s) loaded" in response.text
+    assert "1 sustained slowdown period was found." in response.text
+    assert "Confidence" in response.text
+    assert "0.82" in response.text
+    assert "Why" in response.text
+    assert "Matched sustained slowdown threshold." in response.text
+    assert "Supporting facts" in response.text
+
+
 def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     for name in ("OLIVAW_CONFIG", "OLIVAW_FILES_DIR"):
         monkeypatch.delenv(name, raising=False)
@@ -307,6 +382,88 @@ This briefing is source-backed using: core_signal.
     assert event["related_events"] == [
         "core-signal-dns-watch-def456 - same_window"
     ]
+
+
+def test_briefing_route_renders_compact_wave_metadata(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "title": "June 8 WAN samples",
+    "created_at": "2026-06-08T18:00:00+00:00",
+    "event_count": 3,
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "date": "2026-06-08",
+  "status": "Attention",
+  "summary": "The network had 1 sustained slowdown period.",
+  "events": [
+    {
+      "summary": "1 sustained slowdown period was found.",
+      "confidence": "0.82",
+      "confidence_reason": "Matched sustained slowdown threshold.",
+      "supporting_facts": [
+        {"summary": "WAN p95 exceeded threshold.", "source": "prime_observer"}
+      ],
+      "recommendation_trace": {
+        "recommendation": "Check provider status if symptoms matched.",
+        "interpretation": "Core Signal classified the event."
+      },
+      "related_events": [
+        {"id": "core-signal-dns-watch-def456", "relationship": "same_window"}
+      ],
+      "interpretation_source": "core_signal",
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Evidence" in response.text
+    assert "Prime Observer" in response.text
+    assert "Interpretation" in response.text
+    assert "Core Signal" in response.text
+    assert "Presentation" in response.text
+    assert "Olivaw" in response.text
+    assert "Confidence" in response.text
+    assert "0.82" in response.text
+    assert "Why" in response.text
+    assert "Matched sustained slowdown threshold." in response.text
+    assert "Supporting facts" in response.text
+    assert "Recommendation trace" in response.text
+    assert "Related events" in response.text
+    assert "Show details" in response.text
+    assert "June 8 WAN samples" in response.text
 
 
 def test_briefing_dashboard_links_absolute_prime_observer_investigation_url():

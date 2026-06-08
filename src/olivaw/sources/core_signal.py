@@ -66,7 +66,8 @@ class CoreSignalSource:
 
         items: list[dict[str, object]] = []
         errors: list[str] = []
-        for path in self._discover_reports():
+        reports = self._discover_reports()
+        for path in reports:
             try:
                 item = self._item_from_report(path)
             except Exception as exc:
@@ -79,6 +80,7 @@ class CoreSignalSource:
         payload = self._payload(status=status, items=items)
         if errors:
             payload["errors"] = errors
+        payload["diagnostics"] = self._diagnostics(reports, items, errors)
         return payload
 
     def _payload(self, status: str, items: list[dict[str, object]]) -> SourcePayload:
@@ -88,6 +90,39 @@ class CoreSignalSource:
             "root": str(self.directory),
             "count": len(items),
             "items": items,
+            "diagnostics": self._diagnostics([], items, []),
+        }
+
+    def _diagnostics(
+        self,
+        reports: list[Path],
+        items: list[dict[str, object]],
+        errors: list[str],
+    ) -> dict[str, object]:
+        selected = [str(path.relative_to(self.directory)) for path in reports]
+        event_count = sum(
+            len(events)
+            for item in items
+            for events in (item.get("events"),)
+            if isinstance(events, list)
+        )
+        if event_count:
+            event_status = f"{event_count} interpreted event(s) loaded"
+        elif errors:
+            event_status = "no interpreted events loaded; one or more reports failed"
+        elif items:
+            event_status = "no interpreted events found in selected reports"
+        else:
+            event_status = "no selected Core Signal reports produced items"
+        return {
+            "selection": (
+                "Selected latest JSON files, recent JSON files, and latest "
+                "markdown per category: "
+                + ", ".join(selected)
+                if selected
+                else f"No supported Core Signal files found in {self.directory}"
+            ),
+            "interpreted_events": event_status,
         }
 
     def _discover_reports(self) -> list[Path]:

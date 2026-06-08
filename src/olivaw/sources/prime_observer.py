@@ -86,6 +86,7 @@ class PrimeObserverSource:
         payload = self._payload(status=status, items=items)
         if errors:
             payload["errors"] = errors
+        payload["diagnostics"] = self._diagnostics(reports, items, errors)
         return payload
 
     def _payload(self, status: str, items: list[dict[str, object]]) -> SourcePayload:
@@ -95,6 +96,33 @@ class PrimeObserverSource:
             "root": str(self.directory),
             "count": len(items),
             "items": items,
+            "diagnostics": self._diagnostics([], items, []),
+        }
+
+    def _diagnostics(
+        self,
+        reports: list[Path],
+        items: list[dict[str, object]],
+        errors: list[str],
+    ) -> dict[str, object]:
+        selected = [path.name for path in reports]
+        loaded_types = [str(item.get("report_type") or "") for item in items]
+        index_path = self.directory / "investigation_index.json"
+        if "investigation_index" in loaded_types:
+            index_status = f"loaded from {index_path}"
+        elif any(error.startswith("investigation_index.json:") for error in errors):
+            index_status = f"present at {index_path}, but parsing failed"
+        elif index_path.exists():
+            index_status = f"present at {index_path}, but no catalog item loaded"
+        else:
+            index_status = f"not found at {index_path}"
+        return {
+            "selection": (
+                "Selected files: " + ", ".join(selected)
+                if selected
+                else f"No supported Prime Observer files found in {self.directory}"
+            ),
+            "investigation_index": index_status,
         }
 
     def _discover_reports(self) -> list[Path]:

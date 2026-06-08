@@ -75,6 +75,20 @@
       <p class="card-label">Core Signal Events</p>
       <span class="category-chip">Category: event</span>
       <h2>Interpreted events</h2>
+      <dl class="attribution-triad">
+        <div>
+          <dt>Evidence</dt>
+          <dd>Prime Observer</dd>
+        </div>
+        <div>
+          <dt>Interpretation</dt>
+          <dd>Core Signal</dd>
+        </div>
+        <div>
+          <dt>Presentation</dt>
+          <dd>Olivaw</dd>
+        </div>
+      </dl>
       {% for event in dashboard.core_signal_events %}
         <section class="event-item">
           <h3>{{ event.summary }}</h3>
@@ -92,12 +106,20 @@
               <dd>{{ event.confidence }}</dd>
             {% endif %}
             {% if event.confidence_reason %}
-              <dt>Confidence rationale</dt>
+              <dt>Why</dt>
               <dd>{{ event.confidence_reason }}</dd>
             {% endif %}
             {% if event.supporting_fact_count %}
               <dt>Supporting facts</dt>
               <dd>{{ event.supporting_fact_count }}</dd>
+            {% endif %}
+            {% if event.recommendation_trace %}
+              <dt>Recommendation trace</dt>
+              <dd>{{ event.recommendation_trace | length }}</dd>
+            {% endif %}
+            {% if event.related_events %}
+              <dt>Related events</dt>
+              <dd>{{ event.related_events | length }}</dd>
             {% endif %}
             {% if event.issue_location %}
               <dt>Issue location</dt>
@@ -132,7 +154,7 @@
           </dl>
           {% if event.why or event.supporting_facts or event.recommendation_trace or event.related_events %}
             <details class="inline-details">
-              <summary>Explanation details</summary>
+              <summary>Show details</summary>
               <dl class="event-meta detail-items">
                 {% if event.why %}
                   <dt>Why it matters</dt>
