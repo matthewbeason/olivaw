@@ -20,7 +20,7 @@ from olivaw.assistant.identity import get_identity
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
-app = FastAPI(title="Olivaw", version="0.1.0")
+app = FastAPI(title="Olivaw", version="0.6.1")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -117,9 +117,19 @@ def _briefing_dashboard(
     dns = _ordered_dns_facts(dns)
     dns_details = _dns_detail_lines(prime_lines)
     investigations = _prime_investigation_catalog(prime_lines)
+    prime_investigation_empty_message = _diagnostic_message(
+        prime_lines,
+        "Investigation index",
+        fallback="Investigation index file was not found at configured path.",
+    )
     investigation_navigation = _prime_investigation_navigation(prime_lines)
     nearby_events = _prime_nearby_events(prime_lines)
     events = _core_signal_events(core_lines)
+    core_event_empty_message = _diagnostic_message(
+        core_lines,
+        "Core Signal events",
+        fallback="No Core Signal report file found at configured path.",
+    )
     core = _important_lines(
         core_lines,
         include=(
@@ -148,10 +158,12 @@ def _briefing_dashboard(
         "dns_activity": dns,
         "dns_details": dns_details,
         "prime_investigations": investigations,
+        "prime_investigation_empty_message": prime_investigation_empty_message,
         "prime_investigation_navigation": investigation_navigation,
         "prime_nearby_events": nearby_events,
         "core_signal_findings": core,
         "core_signal_events": events,
+        "core_signal_event_empty_message": core_event_empty_message,
         "source_details": source_lines,
     }
 
@@ -518,6 +530,20 @@ def _prime_nearby_events(lines: list[str]) -> list[dict[str, object]]:
         for group in groups[:3]
         if isinstance(group.get("events"), list) and group.get("events")
     ]
+
+
+def _diagnostic_message(
+    lines: list[str],
+    label: str,
+    *,
+    fallback: str,
+) -> str:
+    prefix = f"{label}:"
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        if cleaned.startswith(prefix):
+            return cleaned.removeprefix(prefix).strip() or fallback
+    return fallback
 
 
 def _ends_nearby_event_block(line: str) -> bool:

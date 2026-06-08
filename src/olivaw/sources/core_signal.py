@@ -106,15 +106,46 @@ class CoreSignalSource:
             for events in (item.get("events"),)
             if isinstance(events, list)
         )
+        rendered_event_count = event_count
+        latest_event = _latest_text(
+            event.get("window_end") or event.get("window_start")
+            for item in items
+            for events in (item.get("events"),)
+            if isinstance(events, list)
+            for event in events
+            if isinstance(event, dict)
+        )
+        selected_metadata = [
+            {
+                "path": str(path.relative_to(self.directory)),
+                "source_path": str(path),
+                "modified": _modified(path),
+            }
+            for path in reports
+        ]
+        generated_timestamps = [
+            str(item.get("generated_at") or "").strip()
+            for item in items
+            if str(item.get("generated_at") or "").strip()
+        ]
         if event_count:
-            event_status = f"{event_count} interpreted event(s) loaded"
+            event_status = f"Core Signal events loaded: {event_count}."
         elif errors:
-            event_status = "no interpreted events loaded; one or more reports failed"
+            event_status = (
+                "Core Signal reports were found, but one or more reports failed "
+                "before event objects could be loaded."
+            )
         elif items:
-            event_status = "no interpreted events found in selected reports"
+            event_status = (
+                "Core Signal reports loaded, but no event objects were emitted."
+            )
         else:
-            event_status = "no selected Core Signal reports produced items"
+            event_status = "No Core Signal report file found at configured path."
+
+        if event_count and rendered_event_count == 0:
+            event_status = "Core Signal events loaded but filtered from this view."
         return {
+            "configured_path": str(self.directory),
             "selection": (
                 "Selected latest JSON files, recent JSON files, and latest "
                 "markdown per category: "
@@ -122,7 +153,13 @@ class CoreSignalSource:
                 if selected
                 else f"No supported Core Signal files found in {self.directory}"
             ),
+            "selected_files": selected,
+            "selected_file_metadata": selected_metadata,
             "interpreted_events": event_status,
+            "event_objects_found": event_count,
+            "interpreted_events_rendered": rendered_event_count,
+            "latest_event_timestamp": latest_event,
+            "generated_timestamps": generated_timestamps,
         }
 
     def _discover_reports(self) -> list[Path]:
@@ -201,6 +238,7 @@ class CoreSignalSource:
             title=title,
             summary=summary,
             report_date=str(data.get("date") or data.get("generated_at") or _modified(path)),
+            generated_at=str(data.get("generated_at") or ""),
             status=status,
             status_reason=status_reason,
             recommended_action=recommended_action,
@@ -221,7 +259,7 @@ class CoreSignalSource:
                 _dict(data.get("dns")).get("recommended_action"),
             ),
             dns_findings=dns_findings,
-            confidence=_first_present(data.get("confidence")),
+            confidence=_first_present(data.get("confidence"), data.get("confidence_label")),
             confidence_reason=_first_present(data.get("confidence_reason")),
             supporting_facts=_coerce_supporting_facts(data.get("supporting_facts")),
             recommendation_trace=_coerce_recommendation_trace(
@@ -294,6 +332,8 @@ def _base_item(
         "title": title,
         "summary": summary,
         "path": path.name,
+        "source_path": str(path),
+        "modified": _modified(path),
         "report_date": report_date,
         "status": status,
         "status_reason": status_reason or "",
@@ -564,7 +604,7 @@ def _event_from_mapping(data: dict[str, Any]) -> dict[str, object]:
         ),
         "status": str(data.get("status") or ""),
         "severity": str(data.get("severity") or ""),
-        "confidence": str(data.get("confidence") or ""),
+        "confidence": str(data.get("confidence") or data.get("confidence_label") or ""),
         "window_start": window_start or "",
         "window_end": window_end or "",
         "summary": str(data.get("summary") or data.get("title") or ""),
@@ -726,6 +766,15 @@ def _modified(path: Path) -> str:
 
 def _mtime(path: Path) -> float:
     return path.stat().st_mtime
+
+
+def _latest_text(values: object) -> str:
+    candidates = sorted(
+        str(value).strip()
+        for value in values
+        if value is not None and str(value).strip()
+    )
+    return candidates[-1] if candidates else ""
 
 
 def _dict(value: object) -> dict[str, Any]:

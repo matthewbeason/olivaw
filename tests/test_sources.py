@@ -115,7 +115,8 @@ def test_sources_report_distinguishes_investigation_index_load_status(tmp_path):
     text = format_sources_report(report)
 
     assert "Root: " in text
-    assert "Investigation index: loaded from" in text
+    assert "Investigation index: Investigation index loaded: 1 investigations." in text
+    assert "Investigation index status: loaded-with-N" in text
     assert "Investigation entries: 1" in text
     assert "Investigation: June 8 WAN samples (viz/investigation.json)" in text
 
@@ -154,7 +155,8 @@ def test_sources_report_surfaces_core_signal_event_metadata(tmp_path):
     report = SourceInspectionCapability().run(config=config)
     text = format_sources_report(report)
 
-    assert "Interpreted events: 1 interpreted event(s) loaded" in text
+    assert "Interpreted events: Core Signal events loaded: 1." in text
+    assert "Event objects found: 1" in text
     assert "Interpreted events: 1" in text
     assert "Event: 1 sustained slowdown period was found." in text
     assert "Confidence: 0.82" in text

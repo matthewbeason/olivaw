@@ -76,13 +76,32 @@ def format_sources_report(report: dict[str, object]) -> str:
 def _diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
     lines: list[str] = []
     for key, label in (
+        ("configured_path", "Configured path"),
         ("selection", "Selection"),
         ("investigation_index", "Investigation index"),
+        ("investigation_index_path", "Investigation index path"),
+        ("investigation_index_status", "Investigation index status"),
+        ("investigation", "Investigation export"),
+        ("investigation_path", "Investigation export path"),
+        ("investigation_status", "Investigation export status"),
+        ("catalog_entry_count", "Catalog entries"),
+        ("investigation_event_count", "Investigation events"),
+        ("latest_investigation_timestamp", "Latest investigation timestamp"),
+        ("investigation_index_modified", "Investigation index modified"),
+        ("investigation_modified", "Investigation export modified"),
+        ("investigation_index_generated_at", "Investigation index generated"),
+        ("investigation_generated_at", "Investigation export generated"),
         ("interpreted_events", "Interpreted events"),
+        ("event_objects_found", "Event objects found"),
+        ("interpreted_events_rendered", "Interpreted events rendered"),
+        ("latest_event_timestamp", "Latest event timestamp"),
     ):
         value = diagnostics.get(key)
-        if value:
+        if value not in (None, "", []):
             lines.append(f"{label}: {value}")
+    generated = diagnostics.get("generated_timestamps")
+    if isinstance(generated, list) and generated:
+        lines.append("Generated timestamps: " + ", ".join(str(item) for item in generated))
     return lines
 
 

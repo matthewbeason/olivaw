@@ -165,17 +165,87 @@ def test_sources_route_renders_investigations_events_and_metadata(monkeypatch, t
     assert response.status_code == 200
     assert "Source path:" in response.text
     assert "Investigation index" in response.text
-    assert "loaded from" in response.text
+    assert "Investigation index loaded: 1 investigations." in response.text
+    assert "Investigation index path" in response.text
+    assert "Catalog entries" in response.text
     assert "Investigation entries: 1" in response.text
     assert "June 8 WAN samples" in response.text
     assert "Interpreted events" in response.text
-    assert "1 interpreted event(s) loaded" in response.text
+    assert "Core Signal events loaded: 1." in response.text
+    assert "Event objects found" in response.text
+    assert "Interpreted events rendered" in response.text
     assert "1 sustained slowdown period was found." in response.text
     assert "Confidence" in response.text
     assert "0.82" in response.text
     assert "Why" in response.text
     assert "Matched sustained slowdown threshold." in response.text
     assert "Supporting facts" in response.text
+
+
+def test_sources_route_renders_precise_empty_diagnostics(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    (prime_dir / "investigation_index.json").write_text("[]\n", encoding="utf-8")
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Healthy",
+  "summary": "Stable."
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+
+    response = client.get("/sources")
+
+    assert response.status_code == 200
+    assert "Investigation index loaded but contains no catalog entries." in response.text
+    assert "Core Signal reports loaded, but no event objects were emitted." in (
+        response.text
+    )
+    assert "Event objects found" in response.text
+
+
+def test_briefing_route_replaces_ambiguous_empty_states(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "No Core Signal report file found at configured path." in response.text
+    assert "Investigation index file was not found at configured path." in response.text
+    assert "No interpreted Core Signal events are available." not in response.text
+    assert "No Prime Observer investigation index is available." not in response.text
 
 
 def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):

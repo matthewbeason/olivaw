@@ -108,21 +108,110 @@ class PrimeObserverSource:
         selected = [path.name for path in reports]
         loaded_types = [str(item.get("report_type") or "") for item in items]
         index_path = self.directory / "investigation_index.json"
+        investigation_path = self.directory / "investigation.json"
+        catalog_count = sum(
+            len(catalog)
+            for item in items
+            for catalog in (item.get("investigation_catalog"),)
+            if isinstance(catalog, list)
+        )
+        investigation_event_count = sum(
+            len(events)
+            for item in items
+            for events in (item.get("investigation_events"),)
+            if isinstance(events, list)
+        )
+        latest_investigation = _latest_text(
+            item.get("latest_investigation_timestamp")
+            or item.get("report_date")
+            for item in items
+            if item.get("report_type") in {"investigation_index", "investigation"}
+        )
+        index_generated_at = _first_item_value(
+            items,
+            report_type="investigation_index",
+            key="generated_at",
+        )
+        investigation_generated_at = _first_item_value(
+            items,
+            report_type="investigation",
+            key="generated_at",
+        )
+
         if "investigation_index" in loaded_types:
-            index_status = f"loaded from {index_path}"
+            index_status = (
+                "Investigation index loaded but contains no catalog entries."
+                if catalog_count == 0
+                else f"Investigation index loaded: {catalog_count} investigations."
+            )
         elif any(error.startswith("investigation_index.json:") for error in errors):
-            index_status = f"present at {index_path}, but parsing failed"
+            index_status = (
+                "Investigation index file was found at configured path, "
+                "but parsing failed."
+            )
         elif index_path.exists():
-            index_status = f"present at {index_path}, but no catalog item loaded"
+            index_status = (
+                "Investigation index file was found at configured path, "
+                "but no catalog entries were loaded."
+            )
         else:
-            index_status = f"not found at {index_path}"
+            index_status = "Investigation index file was not found at configured path."
+
+        if "investigation" in loaded_types:
+            investigation_status = (
+                "Investigation export loaded with events."
+                if investigation_event_count
+                else "Investigation export loaded."
+            )
+        elif any(error.startswith("investigation.json:") for error in errors):
+            investigation_status = (
+                "Investigation export file was found at configured path, "
+                "but parsing failed."
+            )
+        elif investigation_path.exists():
+            investigation_status = (
+                "Investigation export file was found at configured path, "
+                "but no investigation item loaded."
+            )
+        else:
+            investigation_status = (
+                "Investigation export file was not found at configured path."
+            )
         return {
+            "configured_path": str(self.directory),
             "selection": (
                 "Selected files: " + ", ".join(selected)
                 if selected
                 else f"No supported Prime Observer files found in {self.directory}"
             ),
+            "selected_files": selected,
             "investigation_index": index_status,
+            "investigation_index_path": str(index_path),
+            "investigation_index_status": (
+                "loaded-empty"
+                if "investigation_index" in loaded_types and catalog_count == 0
+                else "loaded-with-N"
+                if "investigation_index" in loaded_types
+                else "missing"
+            ),
+            "investigation": investigation_status,
+            "investigation_path": str(investigation_path),
+            "investigation_status": (
+                "loaded-with-events"
+                if "investigation" in loaded_types and investigation_event_count
+                else "loaded"
+                if "investigation" in loaded_types
+                else "missing"
+            ),
+            "catalog_entry_count": catalog_count,
+            "investigation_event_count": investigation_event_count,
+            "latest_investigation_timestamp": latest_investigation or "",
+            "investigation_index_modified": _modified(index_path) if index_path.exists() else "",
+            "investigation_modified": (
+                _modified(investigation_path) if investigation_path.exists() else ""
+            ),
+            "investigation_index_generated_at": index_generated_at,
+            "investigation_generated_at": investigation_generated_at,
         }
 
     def _discover_reports(self) -> list[Path]:
@@ -379,6 +468,7 @@ def _investigation_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
         title="Prime Observer investigation export",
         summary=summary,
         report_date=str(data.get("generated_at") or _modified(path)),
+        generated_at=str(data.get("generated_at") or ""),
         status="ok",
         investigation_start=str(start or ""),
         investigation_end=str(end or ""),
@@ -393,6 +483,7 @@ def _investigation_item(path: Path, data: dict[str, Any]) -> dict[str, object]:
 
 def _investigation_index_item(path: Path, data: object) -> dict[str, object]:
     entries = _investigation_index_entries(data)
+    generated_at = _dict(data).get("generated_at")
     return _base_item(
         path=path,
         title="Prime Observer investigation index",
@@ -400,6 +491,11 @@ def _investigation_index_item(path: Path, data: object) -> dict[str, object]:
             f"Prime Observer investigation index lists {len(entries)} investigation(s)."
         ),
         report_date=_modified(path),
+        generated_at=str(generated_at or ""),
+        latest_investigation_timestamp=_latest_text(
+            entry.get("created_at") for entry in entries
+        )
+        or "",
         status="ok",
         investigation_catalog=entries,
         report_type="investigation_index",
@@ -440,6 +536,8 @@ def _base_item(
         "title": title,
         "summary": summary,
         "path": path.name,
+        "source_path": str(path),
+        "modified": _modified(path),
         "report_date": report_date or _modified(path),
         "status": status or "unknown",
         "findings": findings or [],
@@ -461,6 +559,29 @@ def _modified(path: Path) -> str:
 
 def _mtime(path: Path) -> float:
     return path.stat().st_mtime
+
+
+def _latest_text(values: object) -> str:
+    candidates = sorted(
+        str(value).strip()
+        for value in values
+        if value is not None and str(value).strip()
+    )
+    return candidates[-1] if candidates else ""
+
+
+def _first_item_value(
+    items: list[dict[str, object]],
+    *,
+    report_type: str,
+    key: str,
+) -> str:
+    for item in items:
+        if item.get("report_type") == report_type:
+            value = str(item.get(key) or "").strip()
+            if value:
+                return value
+    return ""
 
 
 def _dict(value: object) -> dict[str, Any]:

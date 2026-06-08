@@ -175,6 +175,7 @@ def _prime_observer_lines(snapshots: list[dict[str, object]]) -> list[str]:
             return ["- Status: ok, no Prime Observer items returned."]
 
         lines = ["- Current-state observations only; interpretation belongs to Core Signal."]
+        lines.extend(_payload_diagnostic_lines(_payload(snapshot), source_id="prime_observer"))
         for item in items:
             report_type = str(item.get("report_type") or "")
             if report_type == "network_attribution":
@@ -204,6 +205,7 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
             return ["- Status: ok, no Core Signal items returned."]
 
         lines: list[str] = []
+        lines.extend(_payload_diagnostic_lines(_payload(snapshot), source_id="core_signal"))
         for item in items[:3]:
             title = str(item.get("title") or "Core Signal report")
             report_date = str(item.get("report_date") or "unknown date")
@@ -593,6 +595,68 @@ def _source_note_lines(snapshots: list[dict[str, object]]) -> list[str]:
             lines.append(f"- {health.source_id}: ok, no items returned.")
             continue
         lines.append(f"- {health.source_id}: ok, {len(items)} item(s) returned.")
+        lines.extend(_payload_diagnostic_lines(payload, source_id=health.source_id))
+    return lines
+
+
+def _payload_diagnostic_lines(
+    payload: SourcePayload | None,
+    *,
+    source_id: str,
+) -> list[str]:
+    if not payload:
+        return []
+    diagnostics = payload.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return []
+    if source_id == "prime_observer":
+        return _prime_observer_diagnostic_lines(diagnostics)
+    if source_id == "core_signal":
+        return _core_signal_diagnostic_lines(diagnostics)
+    return []
+
+
+def _prime_observer_diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    for key, label in (
+        ("configured_path", "Configured path"),
+        ("selection", "Selected Prime Observer files"),
+        ("investigation_index_path", "Investigation index path"),
+        ("investigation_index", "Investigation index"),
+        ("investigation_path", "Investigation export path"),
+        ("investigation", "Investigation export"),
+        ("catalog_entry_count", "Catalog entry count"),
+        ("investigation_event_count", "Investigation event count"),
+        ("latest_investigation_timestamp", "Latest investigation timestamp"),
+        ("investigation_index_modified", "Investigation index modified"),
+        ("investigation_modified", "Investigation export modified"),
+        ("investigation_index_generated_at", "Investigation index generated"),
+        ("investigation_generated_at", "Investigation export generated"),
+    ):
+        value = diagnostics.get(key)
+        if value not in (None, "", []):
+            lines.append(f"- {label}: {value}")
+    return lines
+
+
+def _core_signal_diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    for key, label in (
+        ("configured_path", "Configured reports path"),
+        ("selection", "Selected Core Signal files"),
+        ("interpreted_events", "Core Signal events"),
+        ("event_objects_found", "Event objects found"),
+        ("interpreted_events_rendered", "Interpreted events rendered"),
+        ("latest_event_timestamp", "Latest event timestamp"),
+    ):
+        value = diagnostics.get(key)
+        if value not in (None, "", []):
+            lines.append(f"- {label}: {value}")
+    generated = diagnostics.get("generated_timestamps")
+    if isinstance(generated, list) and generated:
+        lines.append(
+            "- Generated timestamps: " + ", ".join(str(item) for item in generated)
+        )
     return lines
 
 

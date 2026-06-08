@@ -23,13 +23,68 @@
                 {% if payload.diagnostics.selection %}
                   <dt>Selection</dt><dd>{{ payload.diagnostics.selection }}</dd>
                 {% endif %}
+                {% if payload.diagnostics.configured_path %}
+                  <dt>Configured path</dt><dd><code>{{ payload.diagnostics.configured_path }}</code></dd>
+                {% endif %}
                 {% if payload.diagnostics.investigation_index %}
                   <dt>Investigation index</dt>
                   <dd>{{ payload.diagnostics.investigation_index }}</dd>
                 {% endif %}
+                {% if payload.diagnostics.investigation_index_path %}
+                  <dt>Investigation index path</dt>
+                  <dd><code>{{ payload.diagnostics.investigation_index_path }}</code></dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation %}
+                  <dt>Investigation export</dt>
+                  <dd>{{ payload.diagnostics.investigation }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_path %}
+                  <dt>Investigation export path</dt>
+                  <dd><code>{{ payload.diagnostics.investigation_path }}</code></dd>
+                {% endif %}
+                {% if payload.diagnostics.catalog_entry_count is defined %}
+                  <dt>Catalog entries</dt>
+                  <dd>{{ payload.diagnostics.catalog_entry_count }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.latest_investigation_timestamp %}
+                  <dt>Latest investigation timestamp</dt>
+                  <dd>{{ payload.diagnostics.latest_investigation_timestamp }}</dd>
+                {% endif %}
                 {% if payload.diagnostics.interpreted_events %}
                   <dt>Interpreted events</dt>
                   <dd>{{ payload.diagnostics.interpreted_events }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.event_objects_found is defined %}
+                  <dt>Event objects found</dt>
+                  <dd>{{ payload.diagnostics.event_objects_found }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.interpreted_events_rendered is defined %}
+                  <dt>Interpreted events rendered</dt>
+                  <dd>{{ payload.diagnostics.interpreted_events_rendered }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.latest_event_timestamp %}
+                  <dt>Latest event timestamp</dt>
+                  <dd>{{ payload.diagnostics.latest_event_timestamp }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_index_modified %}
+                  <dt>Investigation index modified</dt>
+                  <dd>{{ payload.diagnostics.investigation_index_modified }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_modified %}
+                  <dt>Investigation export modified</dt>
+                  <dd>{{ payload.diagnostics.investigation_modified }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_index_generated_at %}
+                  <dt>Investigation index generated</dt>
+                  <dd>{{ payload.diagnostics.investigation_index_generated_at }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_generated_at %}
+                  <dt>Investigation export generated</dt>
+                  <dd>{{ payload.diagnostics.investigation_generated_at }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.generated_timestamps %}
+                  <dt>Generated timestamps</dt>
+                  <dd>{{ payload.diagnostics.generated_timestamps | join(", ") }}</dd>
                 {% endif %}
               </dl>
             {% endif %}
@@ -61,6 +116,17 @@
           <li>
             <strong>{{ item.title }}</strong>
             {% if item.path %}<span>({{ item.path }})</span>{% endif %}
+            <dl>
+              {% if item.source_path %}
+                <dt>Source file</dt><dd><code>{{ item.source_path }}</code></dd>
+              {% endif %}
+              {% if item.modified %}
+                <dt>Modified</dt><dd>{{ item.modified }}</dd>
+              {% endif %}
+              {% if item.generated_at %}
+                <dt>Generated</dt><dd>{{ item.generated_at }}</dd>
+              {% endif %}
+            </dl>
             <p>{{ item.summary or item.preview }}</p>
             {% if item.report_type == "investigation_index" %}
               <p>Investigation entries: {{ item.investigation_catalog | length }}</p>

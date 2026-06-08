@@ -28,6 +28,10 @@ def test_core_signal_source_reports_empty_directory(tmp_path):
     assert "No Core Signal report files found" in health.message
     assert payload["status"] == "unavailable"
     assert payload["count"] == 0
+    assert payload["diagnostics"]["interpreted_events"] == (
+        "No Core Signal report file found at configured path."
+    )
+    assert payload["diagnostics"]["event_objects_found"] == 0
 
 
 def test_core_signal_source_handles_malformed_report(tmp_path):
@@ -86,6 +90,10 @@ def test_core_signal_source_loads_valid_json_report(tmp_path):
     assert "Block rate remained within the expected range." in item["dns_findings"]
     assert "Encrypted DNS usage was steady." in item["dns_findings"]
     assert "DNS filtering looked normal." in item["findings"]
+    assert payload["diagnostics"]["interpreted_events"] == (
+        "Core Signal reports loaded, but no event objects were emitted."
+    )
+    assert payload["diagnostics"]["event_objects_found"] == 0
 
 
 def test_core_signal_source_preserves_json_event_metadata(tmp_path):
@@ -200,6 +208,43 @@ def test_core_signal_source_preserves_json_event_metadata(tmp_path):
     assert event["attribution_source"] == "prime_observer_incident"
     assert event["prime_observer_investigation"].startswith("http://127.0.0.1:8000/")
     assert event["evidence_window"]["granularity"] == "15-minute bucket"
+    assert payload["diagnostics"]["interpreted_events"] == (
+        "Core Signal events loaded: 1."
+    )
+    assert payload["diagnostics"]["event_objects_found"] == 1
+    assert payload["diagnostics"]["interpreted_events_rendered"] == 1
+    assert payload["diagnostics"]["latest_event_timestamp"] == (
+        "2026-06-08T11:12:09+00:00"
+    )
+
+
+def test_core_signal_source_preserves_confidence_label_metadata(tmp_path):
+    (tmp_path / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Watch",
+  "summary": "Watch condition.",
+  "events": [
+    {
+      "summary": "Watch event.",
+      "confidence_label": "medium",
+      "confidence_reason": "Sparse but consistent evidence.",
+      "supporting_facts": [],
+      "recommendation_trace": [],
+      "related_events": []
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    payload = CoreSignalSource(directory=tmp_path).fetch()
+
+    event = payload["items"][0]["events"][0]
+    assert event["confidence"] == "medium"
+    assert event["confidence_reason"] == "Sparse but consistent evidence."
 
 
 def test_core_signal_source_loads_markdown_morning_brief(tmp_path):

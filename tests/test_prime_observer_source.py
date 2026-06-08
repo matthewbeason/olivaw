@@ -134,6 +134,37 @@ def test_prime_observer_source_loads_optional_investigation_index(tmp_path):
             "path": "viz/investigation.json",
         }
     ]
+    assert payload["diagnostics"]["investigation_index"] == (
+        "Investigation index loaded: 1 investigations."
+    )
+    assert payload["diagnostics"]["investigation_index_status"] == "loaded-with-N"
+    assert payload["diagnostics"]["catalog_entry_count"] == 1
+
+
+def test_prime_observer_source_reports_missing_investigation_index(tmp_path):
+    source = PrimeObserverSource(directory=tmp_path)
+
+    payload = source.fetch()
+
+    assert payload["status"] == "unavailable"
+    assert payload["diagnostics"]["investigation_index"] == (
+        "Investigation index file was not found at configured path."
+    )
+    assert payload["diagnostics"]["investigation_index_status"] == "missing"
+    assert payload["diagnostics"]["catalog_entry_count"] == 0
+
+
+def test_prime_observer_source_reports_empty_investigation_index(tmp_path):
+    (tmp_path / "investigation_index.json").write_text("[]\n", encoding="utf-8")
+
+    payload = PrimeObserverSource(directory=tmp_path).fetch()
+
+    assert payload["status"] == "ok"
+    assert payload["diagnostics"]["investigation_index"] == (
+        "Investigation index loaded but contains no catalog entries."
+    )
+    assert payload["diagnostics"]["investigation_index_status"] == "loaded-empty"
+    assert payload["diagnostics"]["catalog_entry_count"] == 0
 
 
 def test_prime_observer_source_preserves_investigation_navigation_and_neighbors(

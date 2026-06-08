@@ -181,7 +181,7 @@
           {% endif %}
         </section>
       {% else %}
-        <p class="card-copy">No interpreted Core Signal events are available.</p>
+        <p class="card-copy">{{ dashboard.core_signal_event_empty_message }}</p>
       {% endfor %}
       <p class="source-footnote">
         Attribution: evidence from Prime Observer when labeled; interpretation,
@@ -225,7 +225,7 @@
           </dl>
         </section>
       {% else %}
-        <p class="card-copy">No Prime Observer investigation index is available.</p>
+        <p class="card-copy">{{ dashboard.prime_investigation_empty_message }}</p>
       {% endfor %}
 
       {% if dashboard.prime_investigation_navigation %}
