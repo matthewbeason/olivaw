@@ -158,37 +158,111 @@ def _briefing_dashboard(
         recommended=recommended,
     )
 
-    return {
-        "status": status,
-        "status_label": status["label"],
-        "status_tone": status["tone"],
-        "status_explanation": status["explanation"],
-        "executive_summary": _executive_summary(
-            core_lines,
-            prime_lines,
-            fallback=status["explanation"],
-        ),
-        "generated_at": generated_at,
-        "generated_display": generated_at,
-        "sources": sources,
-        "what_matters": what_matters,
-        "worth_knowing": worth,
-        "recommended_action": recommended,
-        "recommended_action_text": _action_text(recommended) or recommended,
-        "network_status": network,
-        "dns_activity": dns,
-        "dns_details": dns_details,
-        "prime_investigations": investigations,
-        "prime_investigation_empty_message": prime_investigation_empty_message,
-        "prime_investigation_navigation": investigation_navigation,
-        "prime_nearby_events": nearby_events,
-        "core_signal_findings": core,
-        "core_signal_events": events,
-        "core_signal_event_empty_message": core_event_empty_message,
-        "core_signal_explanation": explanation,
-        "investigation_references": investigations_summary,
-        "source_details": source_lines,
-    }
+    return _normalize_briefing_dashboard(
+        {
+            "status": status,
+            "status_label": status["label"],
+            "status_tone": status["tone"],
+            "status_explanation": status["explanation"],
+            "executive_summary": _executive_summary(
+                core_lines,
+                prime_lines,
+                fallback=status["explanation"],
+            ),
+            "generated_at": generated_at,
+            "generated_display": generated_at,
+            "sources": sources,
+            "what_matters": what_matters,
+            "worth_knowing": worth,
+            "recommended_action": recommended,
+            "recommended_action_text": _action_text(recommended) or recommended,
+            "network_status": network,
+            "dns_activity": dns,
+            "dns_details": dns_details,
+            "prime_investigations": investigations,
+            "prime_investigation_empty_message": prime_investigation_empty_message,
+            "prime_investigation_navigation": investigation_navigation,
+            "prime_nearby_events": nearby_events,
+            "core_signal_findings": core,
+            "core_signal_events": events,
+            "core_signal_event_empty_message": core_event_empty_message,
+            "core_signal_explanation": explanation,
+            "investigation_references": investigations_summary,
+            "source_details": source_lines,
+        }
+    )
+
+
+def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, object]:
+    list_keys = (
+        "what_matters",
+        "worth_knowing",
+        "network_status",
+        "dns_activity",
+        "dns_details",
+        "prime_investigations",
+        "prime_investigation_navigation",
+        "prime_nearby_events",
+        "core_signal_findings",
+        "core_signal_events",
+        "investigation_references",
+        "source_details",
+    )
+    for key in list_keys:
+        dashboard[key] = _list_value(dashboard.get(key))
+
+    explanation = dashboard.get("core_signal_explanation")
+    if not isinstance(explanation, dict):
+        explanation = {}
+    explanation["supporting_facts"] = _dict_list(explanation.get("supporting_facts"))
+    explanation["recommendation_trace"] = _dict_list(
+        explanation.get("recommendation_trace")
+    )
+    dashboard["core_signal_explanation"] = explanation
+
+    events = []
+    for event in _dict_list(dashboard.get("core_signal_events")):
+        event["supporting_facts"] = _dict_list(event.get("supporting_facts"))
+        event["recommendation_trace"] = _dict_list(event.get("recommendation_trace"))
+        event["related_events"] = _list_value(event.get("related_events"))
+        events.append(event)
+    dashboard["core_signal_events"] = events
+
+    nearby_groups = []
+    for group in _dict_list(dashboard.get("prime_nearby_events")):
+        group["events"] = _list_value(group.get("events"))
+        nearby_groups.append(group)
+    dashboard["prime_nearby_events"] = nearby_groups
+
+    references = []
+    for reference in _dict_list(dashboard.get("investigation_references")):
+        target = str(reference.get("target") or "").strip()
+        if not target:
+            continue
+        references.append(
+            {
+                "label": str(reference.get("label") or "Reference"),
+                "target": target,
+                "href": str(reference.get("href") or ""),
+            }
+        )
+    dashboard["investigation_references"] = references
+
+    return dashboard
+
+
+def _list_value(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _markdown_sections(text: str) -> dict[str, list[str]]:

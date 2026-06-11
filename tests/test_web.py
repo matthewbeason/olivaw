@@ -11,6 +11,7 @@ from olivaw.web import (
     _briefing_dashboard,
     _dashboard_status,
     _human_generated_time,
+    _normalize_briefing_dashboard,
     app,
 )
 
@@ -628,6 +629,140 @@ def test_briefing_route_does_not_invent_recommendation_or_confidence(
     assert "Confidence" not in response.text
     assert "Restart" not in response.text
     assert "Call provider" not in response.text
+
+
+def test_briefing_route_handles_sparse_live_source_shapes(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "title": "Sparse investigation",
+    "status": "",
+    "path": ""
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (prime_dir / "investigation.json").write_text(
+        """
+{
+  "generated_at": "2026-06-08T18:00:00+00:00",
+  "navigation": {
+    "first_event": {},
+    "previous_event": null,
+    "next_event": {},
+    "last_event": null
+  },
+  "event_neighborhoods": [
+    {
+      "event": {},
+      "nearby_events": null
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "date": "2026-06-08",
+  "status": "Watch",
+  "summary": "Sparse report loaded.",
+  "confidence": null,
+  "confidence_reason": null,
+  "supporting_facts": null,
+  "recommendation_trace": null,
+  "related_events": null,
+  "events": [
+    {
+      "summary": "Sparse event loaded.",
+      "confidence": null,
+      "confidence_reason": null,
+      "supporting_facts": null,
+      "recommendation_trace": null,
+      "related_events": null,
+      "prime_observer_reference": {"path": ""}
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Today&apos;s Assessment" in response.text
+    assert "Sparse report loaded." in response.text
+    assert "Sparse event loaded." in response.text
+    assert "Internal Server Error" not in response.text
+
+
+def test_briefing_dashboard_normalizes_optional_collections():
+    dashboard = _normalize_briefing_dashboard(
+        {
+            "core_signal_explanation": {
+                "supporting_facts": None,
+                "recommendation_trace": None,
+            },
+            "core_signal_events": [
+                {
+                    "summary": "Older event shape.",
+                    "supporting_facts": None,
+                    "recommendation_trace": None,
+                    "related_events": None,
+                }
+            ],
+            "prime_nearby_events": [{"anchor": "event-1", "events": None}],
+            "investigation_references": [
+                {"label": "Empty target", "target": "", "href": ""},
+                {"label": "Investigation", "target": "viz/investigation.json"},
+            ],
+            "what_matters": None,
+            "worth_knowing": None,
+            "network_status": None,
+            "dns_activity": None,
+            "dns_details": None,
+            "prime_investigations": None,
+            "prime_investigation_navigation": None,
+            "core_signal_findings": None,
+            "source_details": None,
+        }
+    )
+
+    assert dashboard["core_signal_explanation"]["supporting_facts"] == []
+    assert dashboard["core_signal_explanation"]["recommendation_trace"] == []
+    assert dashboard["core_signal_events"][0]["supporting_facts"] == []
+    assert dashboard["core_signal_events"][0]["recommendation_trace"] == []
+    assert dashboard["core_signal_events"][0]["related_events"] == []
+    assert dashboard["prime_nearby_events"][0]["events"] == []
+    assert dashboard["investigation_references"] == [
+        {
+            "label": "Investigation",
+            "target": "viz/investigation.json",
+            "href": "",
+        }
+    ]
+    assert dashboard["what_matters"] == []
 
 
 def test_briefing_route_preserves_attribution_boundaries(monkeypatch, tmp_path):
