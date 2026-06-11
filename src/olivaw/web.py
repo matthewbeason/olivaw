@@ -143,17 +143,38 @@ def _briefing_dashboard(
         exclude=("recommended action", "event id", "event kind", "view investigation"),
         limit=5,
     )
+    explanation = _core_signal_explanation(core_lines, events)
+    investigations_summary = _investigation_references(
+        events,
+        investigations,
+        investigation_navigation,
+        nearby_events,
+    )
+    what_matters = _what_matters(
+        network=network,
+        core=core,
+        dns=dns,
+        worth=worth,
+        recommended=recommended,
+    )
 
     return {
         "status": status,
         "status_label": status["label"],
         "status_tone": status["tone"],
         "status_explanation": status["explanation"],
+        "executive_summary": _executive_summary(
+            core_lines,
+            prime_lines,
+            fallback=status["explanation"],
+        ),
         "generated_at": generated_at,
         "generated_display": generated_at,
         "sources": sources,
+        "what_matters": what_matters,
         "worth_knowing": worth,
         "recommended_action": recommended,
+        "recommended_action_text": _action_text(recommended) or recommended,
         "network_status": network,
         "dns_activity": dns,
         "dns_details": dns_details,
@@ -164,6 +185,8 @@ def _briefing_dashboard(
         "core_signal_findings": core,
         "core_signal_events": events,
         "core_signal_event_empty_message": core_event_empty_message,
+        "core_signal_explanation": explanation,
+        "investigation_references": investigations_summary,
         "source_details": source_lines,
     }
 
@@ -239,6 +262,83 @@ def _dashboard_status(
         "tone": "healthy",
         "explanation": "Sources do not report a condition needing attention.",
     }
+
+
+def _executive_summary(
+    core_lines: list[str],
+    prime_lines: list[str],
+    *,
+    fallback: str,
+) -> str:
+    core_summary = _core_report_summary(core_lines)
+    current_state = _first_clean_matching(
+        prime_lines,
+        (
+            "Current LAN/WAN state:",
+            "Current status:",
+            "Latest sample timestamp:",
+            "Status:",
+        ),
+    )
+    if core_summary and current_state:
+        return f"{core_summary} Prime Observer reports: {current_state}."
+    if core_summary:
+        return core_summary
+    if current_state:
+        return f"Prime Observer reports: {current_state}."
+    return fallback
+
+
+def _core_report_summary(lines: list[str]) -> str:
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        if not cleaned.startswith("Core Signal "):
+            continue
+        if cleaned.startswith(
+            (
+                "Core Signal events:",
+                "Core Signal reports ",
+            )
+        ):
+            continue
+        _, separator, summary = cleaned.partition(":")
+        if separator and summary.strip():
+            return summary.strip()
+        return cleaned
+    return ""
+
+
+def _first_clean_matching(lines: list[str], prefixes: tuple[str, ...]) -> str:
+    lowered_prefixes = tuple(prefix.lower() for prefix in prefixes)
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        if cleaned.lower().startswith(lowered_prefixes):
+            return cleaned
+    return ""
+
+
+def _what_matters(
+    *,
+    network: list[str],
+    core: list[str],
+    dns: list[str],
+    worth: list[str],
+    recommended: str,
+) -> list[str]:
+    candidates = [
+        *network[:2],
+        *core[:2],
+        *dns[:1],
+        *worth[:2],
+    ]
+    if recommended and not _is_no_action(recommended):
+        candidates.append(recommended)
+    deduped: list[str] = []
+    for item in candidates:
+        cleaned = _clean_briefing_line(item)
+        if cleaned and cleaned not in deduped:
+            deduped.append(cleaned)
+    return deduped[:5]
 
 
 def _current_core_lines(lines: list[str]) -> list[str]:
@@ -370,9 +470,9 @@ def _dns_detail_lines(lines: list[str]) -> list[str]:
     return deduped
 
 
-def _core_signal_events(lines: list[str]) -> list[dict[str, str]]:
-    events: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
+def _core_signal_events(lines: list[str]) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
     for line in lines:
         cleaned = _clean_briefing_line(line)
         if cleaned.startswith("Core Signal "):
@@ -444,6 +544,165 @@ def _core_signal_events(lines: list[str]) -> list[dict[str, str]]:
             if isinstance(related_events, list):
                 related_events.append(value)
     return events[:5]
+
+
+def _core_signal_explanation(
+    lines: list[str],
+    events: list[dict[str, object]],
+) -> dict[str, object]:
+    explanation: dict[str, object] = {}
+    for line in lines:
+        cleaned = _clean_briefing_line(line)
+        if cleaned.startswith("Event:"):
+            break
+        label, separator, value = cleaned.partition(":")
+        if not separator:
+            continue
+        key = label.strip().lower()
+        value = value.strip()
+        if key == "confidence":
+            explanation["confidence"] = value
+        elif key == "confidence rationale":
+            explanation["confidence_reason"] = value
+        elif key == "why/status reasoning":
+            explanation["why"] = value
+        elif key == "supporting facts":
+            explanation["supporting_fact_count"] = value
+        elif key == "fact":
+            facts = explanation.setdefault("supporting_facts", [])
+            if isinstance(facts, list):
+                facts.append({"summary": value})
+        elif key in {"source", "reference"}:
+            facts = explanation.get("supporting_facts")
+            if isinstance(facts, list) and facts and isinstance(facts[-1], dict):
+                facts[-1][key] = value
+        elif key == "recommendation trace":
+            explanation["_trace_open"] = "1"
+        elif explanation.get("_trace_open") and key in {
+            "recommendation",
+            "supporting facts",
+            "interpretation",
+        }:
+            trace = explanation.setdefault("recommendation_trace", [])
+            if isinstance(trace, list):
+                trace.append({"stage": label.strip(), "detail": value})
+
+    if not any(
+        explanation.get(key)
+        for key in (
+            "confidence",
+            "confidence_reason",
+            "why",
+            "supporting_fact_count",
+            "supporting_facts",
+            "recommendation_trace",
+        )
+    ):
+        for event in events:
+            if any(
+                event.get(key)
+                for key in (
+                    "confidence",
+                    "confidence_reason",
+                    "why",
+                    "supporting_fact_count",
+                    "supporting_facts",
+                    "recommendation_trace",
+                )
+            ):
+                explanation = {
+                    key: event[key]
+                    for key in (
+                        "summary",
+                        "confidence",
+                        "confidence_reason",
+                        "why",
+                        "supporting_fact_count",
+                        "supporting_facts",
+                        "recommendation_trace",
+                    )
+                    if key in event
+                }
+                break
+
+    explanation.pop("_trace_open", None)
+    return explanation
+
+
+def _investigation_references(
+    events: list[dict[str, object]],
+    investigations: list[dict[str, str]],
+    navigation: list[dict[str, str]],
+    nearby_events: list[dict[str, object]],
+) -> list[dict[str, str]]:
+    references: list[dict[str, str]] = []
+    for event in events:
+        investigation = str(event.get("investigation_reference") or "").strip()
+        if investigation:
+            references.append(
+                {
+                    "label": "Prime Observer investigation",
+                    "target": investigation,
+                    "href": str(event.get("investigation_href") or ""),
+                }
+            )
+        for fact in event.get("supporting_facts", []):
+            if not isinstance(fact, dict):
+                continue
+            reference = str(fact.get("reference") or "").strip()
+            if reference:
+                references.append(
+                    {
+                        "label": "Supporting fact reference",
+                        "target": reference,
+                        "href": reference if _is_external_url(reference) else "",
+                    }
+                )
+        for related_event in event.get("related_events", []):
+            references.append(
+                {
+                    "label": "Related event",
+                    "target": str(related_event),
+                    "href": "",
+                }
+            )
+    for investigation in investigations:
+        target = str(investigation.get("path") or investigation.get("title") or "")
+        if target:
+            references.append(
+                {
+                    "label": str(investigation.get("title") or "Investigation"),
+                    "target": target,
+                    "href": str(investigation.get("href") or ""),
+                }
+            )
+    for item in navigation[:2]:
+        references.append(
+            {
+                "label": item["label"],
+                "target": item["target"],
+                "href": "",
+            }
+        )
+    for group in nearby_events[:1]:
+        events_list = group.get("events")
+        if isinstance(events_list, list) and events_list:
+            references.append(
+                {
+                    "label": "Nearby events",
+                    "target": f"{len(events_list)} Prime Observer event reference(s)",
+                    "href": "",
+                }
+            )
+
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for reference in references:
+        key = (reference["label"], reference["target"])
+        if reference["target"] and key not in seen:
+            seen.add(key)
+            deduped.append(reference)
+    return deduped[:6]
 
 
 def _prime_investigation_catalog(lines: list[str]) -> list[dict[str, str]]:

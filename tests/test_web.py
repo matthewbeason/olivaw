@@ -263,26 +263,21 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
-    assert "Today at a glance" in response.text
-    assert "source-backed" in response.text
+    assert "Today&apos;s Assessment" in response.text
+    assert "Intelligence briefing" in response.text
     assert "Generated" in response.text
     assert re.search(r"Generated (just now|\d+ minutes? ago|today at)", response.text)
     assert "Refresh briefing" in response.text
-    assert "Overall Status" in response.text
+    assert "Current assessment" in response.text
     assert "Healthy" in response.text
     assert "Sources do not report a condition needing attention." in response.text
-    assert "Worth Knowing" in response.text
+    assert "What Matters" in response.text
+    assert "Priority signals" in response.text
     assert "Recommended Action" in response.text
-    assert "Network Status" in response.text
-    assert "DNS Activity" in response.text
-    assert "Core Signal Findings" in response.text
-    assert "Core Signal Events" in response.text
-    assert "Category: context" in response.text
-    assert "Category: action" in response.text
-    assert "Category: network" in response.text
-    assert "Category: DNS" in response.text
-    assert "Category: interpretation" in response.text
-    assert "Category: event" in response.text
+    assert "Why We Believe This" in response.text
+    assert "Source attribution and current facts" in response.text
+    assert "Core Signal events" in response.text
+    assert "Category:" not in response.text
     assert "Show raw briefing" in response.text
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
@@ -530,10 +525,170 @@ def test_briefing_route_renders_compact_wave_metadata(monkeypatch, tmp_path):
     assert "Why" in response.text
     assert "Matched sustained slowdown threshold." in response.text
     assert "Supporting facts" in response.text
+    assert "WAN p95 exceeded threshold." in response.text
     assert "Recommendation trace" in response.text
     assert "Related events" in response.text
-    assert "Show details" in response.text
+    assert "Show supporting detail" in response.text
     assert "June 8 WAN samples" in response.text
+
+
+def test_briefing_route_renders_executive_summary_from_source_data(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-08T18:00:00+00:00",
+  "current_attribution": {
+    "label": "No active network issue detected",
+    "status": "no_issue_detected",
+    "confidence": "high"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "date": "2026-06-08",
+  "status": "Healthy",
+  "summary": "Current LAN and WAN state appears stable.",
+  "recommended_action": "No action."
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Today&apos;s Assessment" in response.text
+    assert "Current LAN and WAN state appears stable." in response.text
+    assert "Prime Observer reports: Current LAN/WAN state: No active network issue detected." in response.text
+    assert "What Matters" in response.text
+    assert "Recommended Action" in response.text
+    assert "No action." in response.text
+
+
+def test_briefing_route_does_not_invent_recommendation_or_confidence(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "date": "2026-06-08",
+  "status": "Healthy",
+  "summary": "Stable."
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "No specific recommendation is available from Core Signal." in response.text
+    assert "Confidence" not in response.text
+    assert "Restart" not in response.text
+    assert "Call provider" not in response.text
+
+
+def test_briefing_route_preserves_attribution_boundaries(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "title": "WAN fact packet",
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Attention",
+  "summary": "Sustained slowdown was interpreted.",
+  "events": [
+    {
+      "summary": "Slowdown event.",
+      "confidence": "medium",
+      "confidence_reason": "Core Signal matched the policy.",
+      "recommended_action": "Monitor the next report.",
+      "interpretation_source": "core_signal",
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Evidence" in response.text
+    assert "Prime Observer incident attribution" in response.text
+    assert "Interpretation" in response.text
+    assert "Core Signal" in response.text
+    assert "Presentation" in response.text
+    assert "Olivaw" in response.text
 
 
 def test_briefing_dashboard_links_absolute_prime_observer_investigation_url():
@@ -708,7 +863,7 @@ def test_briefing_route_renders_prime_observer_investigation_metadata(
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "Available investigations" in response.text
+    assert "Prime Observer investigations" in response.text
     assert "June 8 WAN samples" in response.text
     assert "Prime Observer investigation index" in response.text
     assert "Investigation navigation" in response.text
@@ -716,7 +871,7 @@ def test_briefing_route_renders_prime_observer_investigation_metadata(
     assert "Nearby events" in response.text
     assert "Events in the same investigation window for Last sample" in response.text
     assert "Prime Observer factual discovery" in response.text
-    assert "Core Signal Findings" in response.text
+    assert "Core Signal" in response.text
     forbidden = ("correlated", "caused by", "likely related", "root cause")
     assert not any(term in response.text.lower() for term in forbidden)
 

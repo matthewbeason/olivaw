@@ -2,97 +2,161 @@
 {% block content %}
   <section class="briefing-hero">
     <div>
-      <p class="eyebrow">Source-backed briefing</p>
-      <h1>Today at a glance</h1>
-      <p class="lede">
-        A current, local-first summary from Olivaw's registered sources.
-      </p>
+      <p class="eyebrow">Intelligence briefing</p>
+      <h1>Today&apos;s Assessment</h1>
+      <p class="lede">{{ dashboard.executive_summary }}</p>
     </div>
     <form method="get" action="/briefing">
       <button type="submit">Refresh briefing</button>
     </form>
   </section>
 
-  <section class="summary-card">
-    <div>
+  <section class="assessment-panel">
+    <div class="assessment-primary">
       <span class="status-pill status-{{ dashboard.status_tone }}">
         {{ dashboard.status_label }}
       </span>
-      <h2>Overall Status</h2>
-      <p class="status-explanation">{{ dashboard.status_explanation }}</p>
+      <h2>Current assessment</h2>
+      <p>{{ dashboard.status_explanation }}</p>
     </div>
-    <dl class="summary-meta">
-      <div>
-        <dt>Generated</dt>
-        <dd>{{ dashboard.generated_display }}</dd>
-      </div>
-      <div>
-        <dt>Sources Used</dt>
-        <dd>{{ dashboard.sources | join(", ") }}</dd>
-      </div>
-      <div>
-        <dt>Attribution</dt>
-        <dd>{{ briefing.attribution.value }}</dd>
-      </div>
-    </dl>
+    <div class="assessment-action">
+      <p class="card-label">Recommended Action</p>
+      <p class="action-copy">{{ dashboard.recommended_action_text }}</p>
+      <p class="source-footnote">Action wording is shown only when supplied by Core Signal.</p>
+    </div>
   </section>
 
-  <section class="briefing-grid" aria-label="Briefing highlights">
-    <article class="briefing-card accent-green">
-      <p class="card-label">Worth Knowing</p>
-      <span class="category-chip">Category: context</span>
-      <h2>Important signals</h2>
-      <ul class="clean-list">
-        {% for item in dashboard.worth_knowing %}
+  <section class="briefing-flow" aria-label="Executive briefing">
+    <article class="briefing-section">
+      <div class="section-heading">
+        <p class="card-label">What Matters</p>
+        <h2>Priority signals</h2>
+      </div>
+      <ul class="clean-list priority-list">
+        {% for item in dashboard.what_matters %}
           <li>{{ item }}</li>
         {% else %}
-          <li>No source-backed highlights are available.</li>
+          <li>No source-backed priority signals are available.</li>
         {% endfor %}
       </ul>
     </article>
 
-    <article class="briefing-card accent-blue">
-      <p class="card-label">Recommended Action</p>
-      <span class="category-chip">Category: action</span>
-      <h2>What to do next</h2>
-      <p class="card-copy">{{ dashboard.recommended_action }}</p>
+    <article class="briefing-section">
+      <div class="section-heading">
+        <p class="card-label">Why We Believe This</p>
+        <h2>Explanation</h2>
+      </div>
+      {% set explanation = dashboard.core_signal_explanation %}
+      {% if explanation %}
+        <dl class="event-meta explanation-meta">
+          {% if explanation.summary %}
+            <dt>Finding</dt>
+            <dd>{{ explanation.summary }}</dd>
+          {% endif %}
+          {% if explanation.confidence %}
+            <dt>Confidence</dt>
+            <dd>{{ explanation.confidence }}</dd>
+          {% endif %}
+          {% if explanation.confidence_reason %}
+            <dt>Rationale</dt>
+            <dd>{{ explanation.confidence_reason }}</dd>
+          {% endif %}
+          {% if explanation.why %}
+            <dt>Reasoning</dt>
+            <dd>{{ explanation.why }}</dd>
+          {% endif %}
+          {% if explanation.supporting_fact_count %}
+            <dt>Supporting facts</dt>
+            <dd>{{ explanation.supporting_fact_count }}</dd>
+          {% endif %}
+        </dl>
+        {% if explanation.supporting_facts or explanation.recommendation_trace %}
+          <details class="inline-details">
+            <summary>Show supporting detail</summary>
+            <dl class="event-meta detail-items">
+              {% for fact in explanation.supporting_facts %}
+                <dt>Fact</dt>
+                <dd>
+                  {{ fact.summary }}
+                  {% if fact.source %}<br>Source: {{ fact.source }}{% endif %}
+                  {% if fact.reference %}<br>Reference: {{ fact.reference }}{% endif %}
+                </dd>
+              {% endfor %}
+              {% for step in explanation.recommendation_trace %}
+                <dt>{{ step.stage }}</dt>
+                <dd>{{ step.detail }}</dd>
+              {% endfor %}
+            </dl>
+          </details>
+        {% endif %}
+      {% else %}
+        <p class="card-copy">No Core Signal explanation metadata is available.</p>
+      {% endif %}
+      {% if explanation.confidence or explanation.confidence_reason %}
+        <p class="source-footnote">
+          Confidence, rationale, supporting facts, recommendations, and relationships are Core Signal metadata.
+        </p>
+      {% elif explanation %}
+        <p class="source-footnote">
+          Explanation, recommendations, and relationships are Core Signal metadata.
+        </p>
+      {% endif %}
     </article>
 
-    <article class="briefing-card accent-purple">
-      <p class="card-label">Core Signal Findings</p>
-      <span class="category-chip">Category: interpretation</span>
-      <h2>Interpretation</h2>
-      <ul class="clean-list">
+    {% if dashboard.investigation_references %}
+      <article class="briefing-section">
+        <div class="section-heading">
+          <p class="card-label">Investigate Further</p>
+          <h2>Source references</h2>
+        </div>
+        <dl class="event-meta">
+          {% for reference in dashboard.investigation_references %}
+            <dt>{{ reference.label }}</dt>
+            <dd>
+              {% if reference.href %}
+                <a href="{{ reference.href }}">{{ reference.target }}</a>
+              {% else %}
+                {{ reference.target }}
+              {% endif %}
+            </dd>
+          {% endfor %}
+        </dl>
+        <p class="source-footnote">Investigation and evidence references are surfaced from Prime Observer or Core Signal metadata.</p>
+      </article>
+    {% endif %}
+  </section>
+
+  <section class="details-stack">
+    <details class="disclosure-card">
+      <summary>Source attribution and current facts</summary>
+      <dl class="detail-list">
+        <dt>Generated</dt>
+        <dd>{{ dashboard.generated_display }}</dd>
+        <dt>Sources used</dt>
+        <dd>{{ dashboard.sources | join(", ") }}</dd>
+        <dt>Attribution</dt>
+        <dd>{{ briefing.attribution.value }}</dd>
+        {% for item in dashboard.network_status %}
+          <dt>Network</dt>
+          <dd>{{ item }}</dd>
+        {% endfor %}
+        {% for item in dashboard.dns_activity %}
+          <dt>DNS</dt>
+          <dd>{{ item }}</dd>
+        {% endfor %}
         {% for item in dashboard.core_signal_findings %}
-          <li>{{ item }}</li>
-        {% else %}
-          <li>No Core Signal interpretation is available.</li>
+          <dt>Core Signal</dt>
+          <dd>{{ item }}</dd>
         {% endfor %}
-      </ul>
-    </article>
-
-    <article class="briefing-card accent-red event-card">
-      <p class="card-label">Core Signal Events</p>
-      <span class="category-chip">Category: event</span>
-      <h2>Interpreted events</h2>
-      <dl class="attribution-triad">
-        <div>
-          <dt>Evidence</dt>
-          <dd>Prime Observer</dd>
-        </div>
-        <div>
-          <dt>Interpretation</dt>
-          <dd>Core Signal</dd>
-        </div>
-        <div>
-          <dt>Presentation</dt>
-          <dd>Olivaw</dd>
-        </div>
       </dl>
+    </details>
+
+    <details class="disclosure-card">
+      <summary>Core Signal events</summary>
       {% for event in dashboard.core_signal_events %}
-        <section class="event-item">
+        <section class="event-item detail-event">
           <h3>{{ event.summary }}</h3>
-          <dl class="event-meta">
+          <dl class="event-meta detail-items">
             {% if event.severity_status %}
               <dt>Severity/status</dt>
               <dd>{{ event.severity_status }}</dd>
@@ -106,24 +170,12 @@
               <dd>{{ event.confidence }}</dd>
             {% endif %}
             {% if event.confidence_reason %}
-              <dt>Why</dt>
+              <dt>Rationale</dt>
               <dd>{{ event.confidence_reason }}</dd>
             {% endif %}
             {% if event.supporting_fact_count %}
               <dt>Supporting facts</dt>
               <dd>{{ event.supporting_fact_count }}</dd>
-            {% endif %}
-            {% if event.recommendation_trace %}
-              <dt>Recommendation trace</dt>
-              <dd>{{ event.recommendation_trace | length }}</dd>
-            {% endif %}
-            {% if event.related_events %}
-              <dt>Related events</dt>
-              <dd>{{ event.related_events | length }}</dd>
-            {% endif %}
-            {% if event.issue_location %}
-              <dt>Issue location</dt>
-              <dd>{{ event.issue_location }}</dd>
             {% endif %}
             {% if event.recommended_action %}
               <dt>Recommended action</dt>
@@ -152,52 +204,18 @@
               </dd>
             {% endif %}
           </dl>
-          {% if event.why or event.supporting_facts or event.recommendation_trace or event.related_events %}
-            <details class="inline-details">
-              <summary>Show details</summary>
-              <dl class="event-meta detail-items">
-                {% if event.why %}
-                  <dt>Why it matters</dt>
-                  <dd>{{ event.why }}</dd>
-                {% endif %}
-                {% for fact in event.supporting_facts %}
-                  <dt>Fact</dt>
-                  <dd>
-                    {{ fact.summary }}
-                    {% if fact.source %}<br>Source: {{ fact.source }}{% endif %}
-                    {% if fact.reference %}<br>Reference: {{ fact.reference }}{% endif %}
-                  </dd>
-                {% endfor %}
-                {% for step in event.recommendation_trace %}
-                  <dt>{{ step.stage }}</dt>
-                  <dd>{{ step.detail }}</dd>
-                {% endfor %}
-                {% for related_event in event.related_events %}
-                  <dt>Related event</dt>
-                  <dd>{{ related_event }}</dd>
-                {% endfor %}
-              </dl>
-            </details>
-          {% endif %}
         </section>
       {% else %}
-        <p class="card-copy">{{ dashboard.core_signal_event_empty_message }}</p>
+        <p class="card-copy details-copy">{{ dashboard.core_signal_event_empty_message }}</p>
       {% endfor %}
-      <p class="source-footnote">
-        Attribution: evidence from Prime Observer when labeled; interpretation,
-        confidence, recommendations, and relationships from Core Signal;
-        presentation by Olivaw.
-      </p>
-    </article>
+    </details>
 
-    <article class="briefing-card accent-teal event-card">
-      <p class="card-label">Prime Observer Investigations</p>
-      <span class="category-chip">Category: factual discovery</span>
-      <h2>Available investigations</h2>
+    <details class="disclosure-card">
+      <summary>Prime Observer investigations</summary>
       {% for investigation in dashboard.prime_investigations %}
-        <section class="event-item">
+        <section class="event-item detail-event">
           <h3>{{ investigation.title }}</h3>
-          <dl class="event-meta">
+          <dl class="event-meta detail-items">
             {% if investigation.created_at %}
               <dt>Created</dt>
               <dd>{{ investigation.created_at }}</dd>
@@ -225,11 +243,11 @@
           </dl>
         </section>
       {% else %}
-        <p class="card-copy">{{ dashboard.prime_investigation_empty_message }}</p>
+        <p class="card-copy details-copy">{{ dashboard.prime_investigation_empty_message }}</p>
       {% endfor %}
 
       {% if dashboard.prime_investigation_navigation %}
-        <details class="inline-details">
+        <details class="inline-details nested-detail">
           <summary>Investigation navigation</summary>
           <dl class="event-meta detail-items">
             {% for item in dashboard.prime_investigation_navigation %}
@@ -243,10 +261,10 @@
       {% endif %}
 
       {% if dashboard.prime_nearby_events %}
-        <details class="inline-details">
+        <details class="inline-details nested-detail">
           <summary>Nearby events</summary>
           {% for group in dashboard.prime_nearby_events %}
-            <section class="event-item">
+            <section class="event-item detail-event">
               {% if group.anchor %}
                 <h3>Events in the same investigation window for {{ group.anchor }}</h3>
               {% else %}
@@ -262,48 +280,10 @@
           <p class="source-footnote">Attribution: Prime Observer factual discovery.</p>
         </details>
       {% endif %}
-    </article>
+    </details>
 
-    <article class="briefing-card accent-orange">
-      <p class="card-label">DNS Activity</p>
-      <span class="category-chip">Category: DNS</span>
-      <h2>Recent DNS facts</h2>
-      <ul class="clean-list">
-        {% for item in dashboard.dns_activity %}
-          <li>{{ item }}</li>
-        {% else %}
-          <li>DNS activity is unavailable from registered sources.</li>
-        {% endfor %}
-      </ul>
-      <details class="inline-details">
-        <summary>DNS details</summary>
-        <ul class="clean-list detail-items">
-          {% for item in dashboard.dns_details %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>No secondary DNS metrics are available.</li>
-          {% endfor %}
-        </ul>
-      </details>
-    </article>
-
-    <article class="briefing-card accent-teal">
-      <p class="card-label">Network Status</p>
-      <span class="category-chip">Category: network</span>
-      <h2>Current state</h2>
-      <ul class="clean-list">
-        {% for item in dashboard.network_status %}
-          <li>{{ item }}</li>
-        {% else %}
-          <li>Network status is unavailable from registered sources.</li>
-        {% endfor %}
-      </ul>
-    </article>
-  </section>
-
-  <section class="details-stack">
     <details class="disclosure-card">
-      <summary>Source details</summary>
+      <summary>Technical source notes</summary>
       <dl class="detail-list">
         <dt>Config path</dt>
         <dd>{{ config.config_path or "defaults only" }}</dd>
@@ -311,6 +291,10 @@
         <dd>{{ dashboard.generated_at }}</dd>
         {% for item in dashboard.source_details %}
           <dt>Source note</dt>
+          <dd>{{ item }}</dd>
+        {% endfor %}
+        {% for item in dashboard.dns_details %}
+          <dt>DNS detail</dt>
           <dd>{{ item }}</dd>
         {% endfor %}
       </dl>

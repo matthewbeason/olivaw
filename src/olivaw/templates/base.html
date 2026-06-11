@@ -211,6 +211,77 @@
         font-weight: 650;
         margin-top: 3px;
       }
+      .assessment-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+      .assessment-primary,
+      .assessment-action,
+      .briefing-section {
+        background: var(--panel);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 8px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.05);
+      }
+      .assessment-primary,
+      .assessment-action {
+        padding: 20px;
+      }
+      .assessment-primary h2 {
+        font-size: 30px;
+        margin: 10px 0 8px;
+      }
+      .assessment-primary p {
+        color: #303033;
+        font-size: 17px;
+        margin: 0;
+        max-width: 720px;
+      }
+      .action-copy {
+        color: #303033;
+        font-size: 19px;
+        font-weight: 650;
+        line-height: 1.4;
+        margin: 0;
+      }
+      .briefing-flow {
+        display: grid;
+        gap: 16px;
+      }
+      .briefing-section {
+        padding: 20px;
+      }
+      .section-heading {
+        align-items: baseline;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        padding-bottom: 10px;
+      }
+      .section-heading h2,
+      .section-heading .card-label {
+        margin-bottom: 0;
+      }
+      .priority-list {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      .explanation-meta {
+        margin-bottom: 4px;
+      }
+      .detail-event {
+        margin: 0 18px 18px;
+      }
+      .details-copy {
+        margin: 0 18px 18px;
+      }
+      .nested-detail {
+        margin: 0 18px 18px;
+      }
       .briefing-grid {
         display: grid;
         grid-template-columns: repeat(6, 1fr);
@@ -381,6 +452,7 @@
           grid-template-columns: 1fr;
           padding: 18px;
         }
+        .assessment-panel { grid-template-columns: 1fr; }
         .summary-meta { grid-template-columns: 1fr; }
         .briefing-grid { grid-template-columns: 1fr; }
         .attribution-triad { grid-template-columns: 1fr; }
