@@ -597,6 +597,119 @@ def test_briefing_route_renders_executive_summary_from_source_data(
     assert "No action." in response.text
 
 
+def test_briefing_investigate_further_renders_navigation_actions(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_root = tmp_path / "prime"
+    prime_dir = prime_root / "viz"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir(parents=True)
+    core_dir.mkdir()
+    files_dir.mkdir()
+    (prime_dir / "investigate.html").write_text("investigation", encoding="utf-8")
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "investigation_index.json").write_text(
+        """
+[
+  {
+    "title": "June 8 WAN samples",
+    "status": "available",
+    "path": "viz/investigation.json"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+    (prime_dir / "investigation.json").write_text(
+        """
+{
+  "navigation": {
+    "first_event": {"id": "event-1", "label": "First sample"},
+    "last_event": {"id": "event-2", "label": "Last sample"}
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Watch",
+  "summary": "Affected telemetry exists.",
+  "events": [
+    {
+      "summary": "Sustained slowdown.",
+      "prime_observer_investigation": "viz/investigate.html?start=1&end=2",
+      "evidence_window": {"label": "2026-06-08T11:00:00Z to 2026-06-08T11:15:00Z"},
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Open investigation evidence" in response.text
+    assert "Review affected telemetry window" in response.text
+    assert "Inspect first event" in response.text
+    assert "Inspect last event" in response.text
+    assert "Technical references" in response.text
+    main_section = response.text.split("Technical references", 1)[0]
+    assert "viz/investigation.json" not in main_section
+    assert ">viz/investigate.html?start=1&amp;end=2<" not in main_section
+    assert "viz/investigation.json" in response.text
+    assert 'href="file://' in response.text
+
+
+def test_briefing_investigate_further_empty_state(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Healthy",
+  "summary": "No investigation metadata."
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "No investigation links are available for this briefing." in response.text
+
+
 def test_briefing_route_does_not_invent_recommendation_or_confidence(
     monkeypatch,
     tmp_path,
@@ -767,6 +880,7 @@ def test_briefing_dashboard_normalizes_optional_collections():
             "label": "Investigation",
             "target": "viz/investigation.json",
             "href": "",
+            "kind": "",
         }
     ]
     assert dashboard["what_matters"] == []
@@ -905,6 +1019,25 @@ This briefing is source-backed using: prime_observer.
             "events": ["First sample (id event-1)", "Later sample (id event-3)"],
         }
     ]
+    assert dashboard["investigation_actions"]["event_navigation"][:2] == [
+        {
+            "label": "Inspect first event",
+            "detail": "First sample (id event-1, target #event-1)",
+            "href": "",
+            "target": "First sample (id event-1, target #event-1)",
+            "attribution": "Prime Observer",
+        },
+        {
+            "label": "Inspect last event",
+            "detail": "Last sample (id event-3)",
+            "href": "",
+            "target": "Last sample (id event-3)",
+            "attribution": "Prime Observer",
+        },
+    ]
+    assert dashboard["investigation_actions"]["event_navigation"][2]["label"] == (
+        "View nearby events"
+    )
 
 
 def test_briefing_route_renders_core_signal_event_without_broken_local_link(

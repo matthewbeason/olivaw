@@ -61,7 +61,12 @@ def briefing_page(request: Request):
     briefing = compose_source_briefing(config=config)
     generated_dt = datetime.now(timezone.utc)
     generated_at = generated_dt.isoformat(timespec="seconds")
-    dashboard = _briefing_dashboard(briefing.text, generated_at, briefing.sources)
+    dashboard = _briefing_dashboard(
+        briefing.text,
+        generated_at,
+        briefing.sources,
+        prime_observer_directory=config.prime_observer.directory,
+    )
     dashboard["generated_display"] = _human_generated_time(generated_dt)
     response = templates.TemplateResponse(
         request,
@@ -81,6 +86,8 @@ def _briefing_dashboard(
     text: str,
     generated_at: str,
     sources: tuple[str, ...],
+    *,
+    prime_observer_directory: Path | None = None,
 ) -> dict[str, object]:
     sections = _markdown_sections(text)
     core_lines = sections.get("Core Signal", [])
@@ -150,6 +157,7 @@ def _briefing_dashboard(
         investigations,
         investigation_navigation,
         nearby_events,
+        prime_observer_directory=prime_observer_directory,
     )
     what_matters = _what_matters(
         network=network,
@@ -189,6 +197,7 @@ def _briefing_dashboard(
             "core_signal_event_empty_message": core_event_empty_message,
             "core_signal_explanation": explanation,
             "investigation_references": investigations_summary,
+            "investigation_actions": _investigation_actions(investigations_summary),
             "source_details": source_lines,
         }
     )
@@ -245,9 +254,19 @@ def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, obj
                 "label": str(reference.get("label") or "Reference"),
                 "target": target,
                 "href": str(reference.get("href") or ""),
+                "kind": str(reference.get("kind") or ""),
             }
         )
     dashboard["investigation_references"] = references
+    actions = dashboard.get("investigation_actions")
+    if not isinstance(actions, dict):
+        actions = {}
+    dashboard["investigation_actions"] = {
+        "primary": _dict_list(actions.get("primary")),
+        "event_navigation": _dict_list(actions.get("event_navigation")),
+        "supporting": _dict_list(actions.get("supporting")),
+        "technical": _dict_list(actions.get("technical")),
+    }
 
     return dashboard
 
@@ -709,16 +728,35 @@ def _investigation_references(
     investigations: list[dict[str, str]],
     navigation: list[dict[str, str]],
     nearby_events: list[dict[str, object]],
+    *,
+    prime_observer_directory: Path | None = None,
 ) -> list[dict[str, str]]:
     references: list[dict[str, str]] = []
     for event in events:
         investigation = str(event.get("investigation_reference") or "").strip()
         if investigation:
+            href = str(event.get("investigation_href") or "").strip()
+            if not href:
+                href = _prime_observer_reference_href(
+                    investigation,
+                    prime_observer_directory=prime_observer_directory,
+                )
             references.append(
                 {
                     "label": "Prime Observer investigation",
                     "target": investigation,
-                    "href": str(event.get("investigation_href") or ""),
+                    "href": href,
+                    "kind": "primary_investigation",
+                }
+            )
+        evidence_window = str(event.get("evidence_window") or "").strip()
+        if evidence_window:
+            references.append(
+                {
+                    "label": "Affected telemetry window",
+                    "target": evidence_window,
+                    "href": "",
+                    "kind": "affected_window",
                 }
             )
         for fact in event.get("supporting_facts", []):
@@ -731,6 +769,7 @@ def _investigation_references(
                         "label": "Supporting fact reference",
                         "target": reference,
                         "href": reference if _is_external_url(reference) else "",
+                        "kind": "supporting_fact",
                     }
                 )
         for related_event in event.get("related_events", []):
@@ -739,6 +778,7 @@ def _investigation_references(
                     "label": "Related event",
                     "target": str(related_event),
                     "href": "",
+                    "kind": "related_event",
                 }
             )
     for investigation in investigations:
@@ -749,14 +789,16 @@ def _investigation_references(
                     "label": str(investigation.get("title") or "Investigation"),
                     "target": target,
                     "href": str(investigation.get("href") or ""),
+                    "kind": "investigation_index",
                 }
             )
-    for item in navigation[:2]:
+    for item in _preferred_navigation_items(navigation):
         references.append(
             {
                 "label": item["label"],
                 "target": item["target"],
                 "href": "",
+                "kind": "event_navigation",
             }
         )
     for group in nearby_events[:1]:
@@ -767,6 +809,7 @@ def _investigation_references(
                     "label": "Nearby events",
                     "target": f"{len(events_list)} Prime Observer event reference(s)",
                     "href": "",
+                    "kind": "nearby_events",
                 }
             )
 
@@ -777,7 +820,153 @@ def _investigation_references(
         if reference["target"] and key not in seen:
             seen.add(key)
             deduped.append(reference)
-    return deduped[:6]
+    return deduped[:12]
+
+
+def _preferred_navigation_items(
+    navigation: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    selected = []
+    for wanted in ("First event", "Last event"):
+        for item in navigation:
+            if item.get("label") == wanted:
+                selected.append(item)
+                break
+    if selected:
+        return selected
+    return navigation[:2]
+
+
+def _investigation_actions(
+    references: list[dict[str, str]],
+) -> dict[str, list[dict[str, str]]]:
+    actions: dict[str, list[dict[str, str]]] = {
+        "primary": [],
+        "event_navigation": [],
+        "supporting": [],
+        "technical": [],
+    }
+    for reference in references:
+        kind = reference.get("kind", "")
+        target = reference.get("target", "")
+        href = reference.get("href", "")
+        if kind == "primary_investigation":
+            actions["primary"].append(
+                {
+                    "label": "Open investigation evidence",
+                    "detail": "Prime Observer investigation",
+                    "href": href,
+                    "target": target,
+                    "attribution": "Prime Observer",
+                }
+            )
+        elif kind == "affected_window":
+            actions["primary"].append(
+                {
+                    "label": "Review affected telemetry window",
+                    "detail": "Core Signal affected window",
+                    "href": "",
+                    "target": target,
+                    "attribution": "Core Signal evidence window",
+                }
+            )
+        elif kind == "event_navigation":
+            actions["event_navigation"].append(
+                {
+                    "label": _navigation_action_label(reference.get("label", "")),
+                    "detail": target,
+                    "href": "",
+                    "target": target,
+                    "attribution": "Prime Observer",
+                }
+            )
+        elif kind == "nearby_events":
+            actions["event_navigation"].append(
+                {
+                    "label": "View nearby events",
+                    "detail": target,
+                    "href": "",
+                    "target": target,
+                    "attribution": "Prime Observer",
+                }
+            )
+        elif kind == "supporting_fact":
+            actions["supporting"].append(
+                {
+                    "label": "Review supporting fact",
+                    "detail": "Core Signal supporting fact reference",
+                    "href": href,
+                    "target": target,
+                    "attribution": "Core Signal",
+                }
+            )
+        actions["technical"].append(
+            {
+                "label": reference.get("label", "Reference"),
+                "target": target,
+                "href": href,
+                "attribution": _reference_attribution(kind),
+            }
+        )
+    return actions
+
+
+def _navigation_action_label(label: str) -> str:
+    lowered = label.lower()
+    if "first" in lowered:
+        return "Inspect first event"
+    if "last" in lowered:
+        return "Inspect last event"
+    if "previous" in lowered:
+        return "Inspect previous event"
+    if "next" in lowered:
+        return "Inspect next event"
+    return "Inspect event"
+
+
+def _reference_attribution(kind: str) -> str:
+    if kind in {
+        "primary_investigation",
+        "investigation_index",
+        "event_navigation",
+        "nearby_events",
+    }:
+        return "Prime Observer"
+    if kind in {"affected_window", "supporting_fact", "related_event"}:
+        return "Core Signal"
+    return "Olivaw"
+
+
+def _prime_observer_reference_href(
+    reference: str,
+    *,
+    prime_observer_directory: Path | None,
+) -> str:
+    if _is_external_url(reference):
+        return reference
+    if prime_observer_directory is None:
+        return ""
+    parsed = urlparse(reference)
+    path_text = parsed.path
+    if not path_text or not path_text.endswith(".html"):
+        return ""
+    relative = Path(path_text)
+    if relative.is_absolute():
+        candidate = relative
+    else:
+        parts = relative.parts
+        if parts and parts[0] == prime_observer_directory.name:
+            candidate = prime_observer_directory.parent.joinpath(*parts)
+        else:
+            candidate = prime_observer_directory.joinpath(relative)
+    if not candidate.exists():
+        return ""
+    href = candidate.resolve().as_uri()
+    if parsed.query:
+        href = f"{href}?{parsed.query}"
+    if parsed.fragment:
+        href = f"{href}#{parsed.fragment}"
+    return href
 
 
 def _prime_investigation_catalog(lines: list[str]) -> list[dict[str, str]]:

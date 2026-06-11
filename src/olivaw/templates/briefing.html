@@ -103,27 +103,83 @@
       {% endif %}
     </article>
 
-    {% if dashboard.investigation_references %}
-      <article class="briefing-section">
-        <div class="section-heading">
-          <p class="card-label">Investigate Further</p>
-          <h2>Source references</h2>
-        </div>
-        <dl class="event-meta">
-          {% for reference in dashboard.investigation_references %}
-            <dt>{{ reference.label }}</dt>
-            <dd>
-              {% if reference.href %}
-                <a href="{{ reference.href }}">{{ reference.target }}</a>
-              {% else %}
+    {% set investigation = dashboard.investigation_actions %}
+    <article class="briefing-section">
+      <div class="section-heading">
+        <p class="card-label">Investigate Further</p>
+        <h2>Navigation</h2>
+      </div>
+      {% if investigation.primary or investigation.event_navigation or investigation.supporting %}
+        {% if investigation.primary %}
+          <h3 class="briefing-subhead">Primary investigation</h3>
+          <ul class="clean-list action-list">
+            {% for action in investigation.primary %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  {{ action.label }}
+                {% endif %}
+                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        {% if investigation.event_navigation %}
+          <h3 class="briefing-subhead">Event navigation</h3>
+          <ul class="clean-list action-list">
+            {% for action in investigation.event_navigation %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  {{ action.label }}
+                {% endif %}
+                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        {% if investigation.supporting %}
+          <h3 class="briefing-subhead">Supporting references</h3>
+          <ul class="clean-list action-list">
+            {% for action in investigation.supporting %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  {{ action.label }}
+                {% endif %}
+                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% else %}
+        <p class="card-copy">No investigation links are available for this briefing.</p>
+      {% endif %}
+
+      {% if investigation.technical %}
+        <details class="inline-details">
+          <summary>Technical references</summary>
+          <dl class="event-meta detail-items">
+            {% for reference in investigation.technical %}
+              <dt>{{ reference.label }}</dt>
+              <dd>
                 {{ reference.target }}
-              {% endif %}
-            </dd>
-          {% endfor %}
-        </dl>
-        <p class="source-footnote">Investigation and evidence references are surfaced from Prime Observer or Core Signal metadata.</p>
-      </article>
-    {% endif %}
+                {% if reference.href %}<br>Link: {{ reference.href }}{% endif %}
+                {% if reference.attribution %}<br>Source: {{ reference.attribution }}{% endif %}
+              </dd>
+            {% endfor %}
+          </dl>
+        </details>
+      {% endif %}
+      <p class="source-footnote">
+        Investigation and evidence links come from Prime Observer; interpretation and supporting context come from Core Signal; navigation presentation is by Olivaw.
+      </p>
+    </article>
   </section>
 
   <section class="details-stack">
