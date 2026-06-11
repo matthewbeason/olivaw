@@ -56,6 +56,13 @@ def test_home_route_renders():
     assert "Briefing renders without repo fixtures" in response.text
 
 
+def test_templates_do_not_hot_reload_in_long_running_web_process():
+    assert app.version == "0.6.1"
+    from olivaw.web import templates
+
+    assert templates.env.auto_reload is False
+
+
 def test_home_route_renders_from_non_repo_cwd(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 

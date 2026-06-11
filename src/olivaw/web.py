@@ -20,6 +20,7 @@ from olivaw.assistant.identity import get_identity
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+templates.env.auto_reload = False
 app = FastAPI(title="Olivaw", version="0.6.1")
 
 
