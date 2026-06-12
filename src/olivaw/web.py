@@ -66,6 +66,7 @@ def briefing_page(request: Request):
         generated_at,
         briefing.sources,
         prime_observer_directory=config.prime_observer.directory,
+        prime_observer_base_url=config.prime_observer.base_url,
     )
     dashboard["generated_display"] = _human_generated_time(generated_dt)
     response = templates.TemplateResponse(
@@ -88,6 +89,7 @@ def _briefing_dashboard(
     sources: tuple[str, ...],
     *,
     prime_observer_directory: Path | None = None,
+    prime_observer_base_url: str | None = None,
 ) -> dict[str, object]:
     sections = _markdown_sections(text)
     core_lines = sections.get("Core Signal", [])
@@ -158,6 +160,7 @@ def _briefing_dashboard(
         investigation_navigation,
         nearby_events,
         prime_observer_directory=prime_observer_directory,
+        prime_observer_base_url=prime_observer_base_url,
     )
     what_matters = _what_matters(
         network=network,
@@ -730,6 +733,7 @@ def _investigation_references(
     nearby_events: list[dict[str, object]],
     *,
     prime_observer_directory: Path | None = None,
+    prime_observer_base_url: str | None = None,
 ) -> list[dict[str, str]]:
     references: list[dict[str, str]] = []
     for event in events:
@@ -740,6 +744,7 @@ def _investigation_references(
                 href = _prime_observer_reference_href(
                     investigation,
                     prime_observer_directory=prime_observer_directory,
+                    prime_observer_base_url=prime_observer_base_url,
                 )
             references.append(
                 {
@@ -851,6 +856,12 @@ def _investigation_actions(
         target = reference.get("target", "")
         href = reference.get("href", "")
         if kind == "primary_investigation":
+            unavailable_reason = ""
+            if not href:
+                unavailable_reason = (
+                    "Start the Prime Observer local server to open investigation "
+                    "evidence."
+                )
             actions["primary"].append(
                 {
                     "label": "Open investigation evidence",
@@ -858,6 +869,7 @@ def _investigation_actions(
                     "href": href,
                     "target": target,
                     "attribution": "Prime Observer",
+                    "unavailable_reason": unavailable_reason,
                 }
             )
         elif kind == "affected_window":
@@ -941,27 +953,25 @@ def _prime_observer_reference_href(
     reference: str,
     *,
     prime_observer_directory: Path | None,
+    prime_observer_base_url: str | None = None,
 ) -> str:
     if _is_external_url(reference):
         return reference
-    if prime_observer_directory is None:
+    if not prime_observer_base_url:
         return ""
     parsed = urlparse(reference)
     path_text = parsed.path
     if not path_text or not path_text.endswith(".html"):
         return ""
-    relative = Path(path_text)
-    if relative.is_absolute():
-        candidate = relative
-    else:
-        parts = relative.parts
-        if parts and parts[0] == prime_observer_directory.name:
-            candidate = prime_observer_directory.parent.joinpath(*parts)
-        else:
-            candidate = prime_observer_directory.joinpath(relative)
-    if not candidate.exists():
+    base = prime_observer_base_url.rstrip("/")
+    if not _is_external_url(base):
         return ""
-    href = candidate.resolve().as_uri()
+    relative = path_text.lstrip("/")
+    if prime_observer_directory and relative.startswith(
+        f"{prime_observer_directory.name}/"
+    ):
+        relative = relative.removeprefix(f"{prime_observer_directory.name}/")
+    href = f"{base}/{relative}"
     if parsed.query:
         href = f"{href}?{parsed.query}"
     if parsed.fragment:

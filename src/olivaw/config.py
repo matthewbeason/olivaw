@@ -58,6 +58,7 @@ class FileSourceConfig:
 class PrimeObserverSourceConfig:
     directory: Path = field(default_factory=lambda: default_prime_observer_path())
     enabled: bool = True
+    base_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +159,12 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
             _env_value("OLIVAW_PRIME_OBSERVER_ENABLED"),
             bool(prime_observer_data.get("enabled", True)),
         ),
+        base_url=_optional_str(
+            _env_value(
+                "OLIVAW_PRIME_OBSERVER_BASE_URL",
+                prime_observer_data.get("base_url"),
+            )
+        ),
     )
 
     core_signal = CoreSignalSourceConfig(
@@ -207,6 +214,7 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "prime_observer": {
                 "directory": str(config.prime_observer.directory),
                 "enabled": config.prime_observer.enabled,
+                "base_url": config.prime_observer.base_url,
             },
             "core_signal": {
                 "directory": str(config.core_signal.directory),
@@ -249,6 +257,7 @@ def format_config_report(config: OlivawConfig) -> str:
             f"- Files max bytes: {config.files.max_bytes}",
             f"- Prime Observer enabled: {'yes' if config.prime_observer.enabled else 'no'}",
             f"- Prime Observer directory: {config.prime_observer.directory}",
+            f"- Prime Observer base URL: {config.prime_observer.base_url or 'not configured'}",
             f"- Core Signal enabled: {'yes' if config.core_signal.enabled else 'no'}",
             f"- Core Signal directory: {config.core_signal.directory}",
         ]
@@ -314,6 +323,13 @@ def _first_present(*values: object) -> str | None:
         if text:
             return text
     return None
+
+
+def _optional_str(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _env_value(name: str, default: object | None = None) -> object | None:

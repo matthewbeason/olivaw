@@ -23,6 +23,7 @@ def clear_config_env(monkeypatch):
         "OLIVAW_FILES_MAX_BYTES",
         "OLIVAW_PRIME_OBSERVER_DIR",
         "OLIVAW_PRIME_OBSERVER_ENABLED",
+        "OLIVAW_PRIME_OBSERVER_BASE_URL",
         "OLIVAW_CORE_SIGNAL_DIR",
         "OLIVAW_CORE_SIGNAL_ENABLED",
         "OPENAI_API_KEY",
@@ -69,6 +70,7 @@ cloud_fallback = "enabled"
 [sources.prime_observer]
 directory = "~/prime-observer/viz"
 enabled = true
+base_url = "http://127.0.0.1:8766"
 
 [sources.core_signal]
 directory = "~/core-signal/reports"
@@ -92,6 +94,7 @@ openai_api_key = "config-secret"
     assert config.policy.cloud_fallback == "enabled"
     assert config.prime_observer.directory == tmp_path / "prime-observer" / "viz"
     assert config.prime_observer.enabled is True
+    assert config.prime_observer.base_url == "http://127.0.0.1:8766"
     assert config.core_signal.directory == tmp_path / "core-signal" / "reports"
     assert config.core_signal.enabled is True
 
@@ -164,6 +167,7 @@ max_bytes = 2048
 [sources.prime_observer]
 directory = "~/prime-observer/custom"
 enabled = true
+base_url = "http://127.0.0.1:8766"
 
 [sources.core_signal]
 directory = "~/core-signal/custom"
@@ -183,6 +187,7 @@ openai_api_key = "config-secret"
     monkeypatch.setenv("OLIVAW_FILES_MAX_BYTES", "")
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", "")
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_ENABLED", "")
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_BASE_URL", "")
     monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", "")
     monkeypatch.setenv("OLIVAW_CORE_SIGNAL_ENABLED", "")
     monkeypatch.setenv("OPENAI_API_KEY", "")
@@ -201,6 +206,7 @@ openai_api_key = "config-secret"
     assert config.files.max_bytes == 2048
     assert config.prime_observer.directory == tmp_path / "prime-observer" / "custom"
     assert config.prime_observer.enabled is True
+    assert config.prime_observer.base_url == "http://127.0.0.1:8766"
     assert config.core_signal.directory == tmp_path / "core-signal" / "custom"
     assert config.core_signal.enabled is True
     assert config.cloud.api_key == "config-secret"
@@ -240,17 +246,20 @@ def test_prime_observer_environment_overrides_user_config(monkeypatch, tmp_path)
 [sources.prime_observer]
 directory = "~/prime-observer/viz"
 enabled = true
+base_url = "http://127.0.0.1:8766"
 """,
         encoding="utf-8",
     )
     override_dir = tmp_path / "custom-prime-observer"
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(override_dir))
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_ENABLED", "false")
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_BASE_URL", "http://127.0.0.1:8767")
 
     config = load_config()
 
     assert config.prime_observer.directory == override_dir
     assert config.prime_observer.enabled is False
+    assert config.prime_observer.base_url == "http://127.0.0.1:8767"
 
 
 def test_core_signal_environment_overrides_user_config(monkeypatch, tmp_path):
@@ -310,8 +319,10 @@ openai_api_key = "config-secret"
     assert public["config_path"] == str(config_path)
     assert public["config_file_exists"] is True
     assert public["cloud"]["api_key_present"] is True
+    assert public["sources"]["prime_observer"]["base_url"] is None
     assert "config-secret" not in str(public)
     assert "API key configured: yes" in report
+    assert "Prime Observer base URL: not configured" in report
     assert "config-secret" not in report
 
 

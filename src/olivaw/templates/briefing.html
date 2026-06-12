@@ -118,9 +118,12 @@
                 {% if action.href %}
                   <a href="{{ action.href }}">{{ action.label }}</a>
                 {% else %}
-                  {{ action.label }}
+                  <span class="unavailable-action">{{ action.label }}</span>
                 {% endif %}
                 {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+                {% if action.unavailable_reason %}
+                  <span class="action-helper">{{ action.unavailable_reason }}</span>
+                {% endif %}
               </li>
             {% endfor %}
           </ul>

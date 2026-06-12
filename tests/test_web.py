@@ -605,6 +605,7 @@ def test_briefing_investigate_further_renders_navigation_actions(
         "OLIVAW_CONFIG",
         "OLIVAW_FILES_DIR",
         "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_PRIME_OBSERVER_BASE_URL",
         "OLIVAW_CORE_SIGNAL_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -618,6 +619,7 @@ def test_briefing_investigate_further_renders_navigation_actions(
     (prime_dir / "investigate.html").write_text("investigation", encoding="utf-8")
     monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_BASE_URL", "http://127.0.0.1:8766")
     monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
     (prime_dir / "investigation_index.json").write_text(
         """
@@ -672,8 +674,70 @@ def test_briefing_investigate_further_renders_navigation_actions(
     main_section = response.text.split("Technical references", 1)[0]
     assert "viz/investigation.json" not in main_section
     assert ">viz/investigate.html?start=1&amp;end=2<" not in main_section
+    assert (
+        'href="http://127.0.0.1:8766/investigate.html?start=1&amp;end=2"'
+        in response.text
+    )
     assert "viz/investigation.json" in response.text
-    assert 'href="file://' in response.text
+    assert 'href="file://' not in response.text
+
+
+def test_briefing_investigate_further_disables_local_investigation_without_base_url(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_PRIME_OBSERVER_BASE_URL",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime" / "viz"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir(parents=True)
+    core_dir.mkdir()
+    files_dir.mkdir()
+    (prime_dir / "investigate.html").write_text("investigation", encoding="utf-8")
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Watch",
+  "summary": "Affected telemetry exists.",
+  "events": [
+    {
+      "summary": "Sustained slowdown.",
+      "prime_observer_investigation": "viz/investigate.html?start=1&end=2",
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Open investigation evidence" in response.text
+    assert (
+        "Start the Prime Observer local server to open investigation evidence."
+        in response.text
+    )
+    assert '<a href="file://' not in response.text
+    assert (
+        '<a href="viz/investigate.html?start=1&amp;end=2">'
+        not in response.text
+    )
+    main_section = response.text.split("Technical references", 1)[0]
+    assert "viz/investigate.html?start=1&amp;end=2" not in main_section
+    assert "viz/investigate.html?start=1&amp;end=2" in response.text
 
 
 def test_briefing_investigate_further_empty_state(monkeypatch, tmp_path):

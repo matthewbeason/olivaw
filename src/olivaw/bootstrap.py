@@ -25,6 +25,8 @@ max_bytes = 1048576
 [sources.prime_observer]
 directory = "~/prime-observer/viz"
 enabled = true
+# Optional. Use when Prime Observer serves its viz directory over HTTP.
+# base_url = "http://127.0.0.1:8766"
 
 [sources.core_signal]
 directory = "~/core-signal/reports"
