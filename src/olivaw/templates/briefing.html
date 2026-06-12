@@ -14,15 +14,35 @@
   <section class="assessment-panel">
     <div class="assessment-primary">
       <span class="status-pill status-{{ dashboard.status_tone }}">
-        {{ dashboard.status_label }}
+        {{ dashboard.current_status_label }}
       </span>
-      <h2>Current assessment</h2>
+      <h2>Current status</h2>
       <p>{{ dashboard.status_explanation }}</p>
+    </div>
+    <div class="assessment-action">
+      <p class="card-label">Historical Finding</p>
+      {% if dashboard.historical_findings %}
+        {% for finding in dashboard.historical_findings %}
+          <p class="action-copy">{{ finding }}</p>
+        {% endfor %}
+      {% else %}
+        <p class="action-copy">No source-backed historical finding is available.</p>
+      {% endif %}
     </div>
     <div class="assessment-action">
       <p class="card-label">Recommended Action</p>
       <p class="action-copy">{{ dashboard.recommended_action_text }}</p>
-      <p class="source-footnote">Action wording is shown only when supplied by Core Signal.</p>
+      <p class="source-footnote">Action meaning is shown only when supplied by Core Signal.</p>
+    </div>
+    <div class="assessment-action">
+      <p class="card-label">What Remains Uncertain</p>
+      {% if dashboard.uncertainty_items %}
+        {% for item in dashboard.uncertainty_items %}
+          <p class="action-copy">{{ item }}</p>
+        {% endfor %}
+      {% else %}
+        <p class="action-copy">No explicit uncertainty was supplied by Core Signal.</p>
+      {% endif %}
     </div>
   </section>
 

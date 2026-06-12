@@ -293,6 +293,7 @@ def test_source_briefing_includes_prime_observer_section(tmp_path):
     assert "## Prime Observer" in briefing.text
     assert "Current-state observations only" in briefing.text
     assert "Current LAN/WAN state: No network issue detected" in briefing.text
+    assert "Current network state: no active issue detected" in briefing.text
     assert "This briefing is source-backed using: prime_observer." in briefing.text
 
 
@@ -318,6 +319,7 @@ def test_source_briefing_prime_observer_is_current_state_focused(tmp_path):
     assert "Current-state observations only" in prime_section
     assert "Latest sample timestamp: 2026-06-04T00:00:00-07:00" in prime_section
     assert "Current LAN/WAN state: No network issue detected" in prime_section
+    assert "Current network state: no active issue detected" in prime_section
     assert "DNS summary: available from Prime Observer." in prime_section
     assert (
         "Top queried domain: www.example.test (count 300, share 0.3)"

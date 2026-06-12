@@ -169,11 +169,14 @@ def _briefing_dashboard(
         worth=worth,
         recommended=recommended,
     )
+    historical_findings = _historical_findings(events)
+    uncertainty_items = _uncertainty_items(explanation, events)
 
     return _normalize_briefing_dashboard(
         {
             "status": status,
             "status_label": status["label"],
+            "current_status_label": _current_status_label(status["label"]),
             "status_tone": status["tone"],
             "status_explanation": status["explanation"],
             "executive_summary": _executive_summary(
@@ -185,9 +188,16 @@ def _briefing_dashboard(
             "generated_display": generated_at,
             "sources": sources,
             "what_matters": what_matters,
+            "historical_findings": historical_findings,
+            "uncertainty_items": uncertainty_items,
             "worth_knowing": worth,
             "recommended_action": recommended,
-            "recommended_action_text": _action_text(recommended) or recommended,
+            "recommended_action_text": _recommended_action_text(
+                recommended,
+                status=status,
+                events=events,
+                investigation_references=investigations_summary,
+            ),
             "network_status": network,
             "dns_activity": dns,
             "dns_details": dns_details,
@@ -210,6 +220,8 @@ def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, obj
     list_keys = (
         "what_matters",
         "worth_knowing",
+        "historical_findings",
+        "uncertainty_items",
         "network_status",
         "dns_activity",
         "dns_details",
@@ -470,6 +482,7 @@ def _current_state_is_clear(current_text: str, prime_text: str) -> bool:
     no_issue = (
         "no network issue detected" in prime_text
         or "current status: no_issue_detected" in prime_text
+        or "current network state: no active issue detected" in prime_text
     )
     not_actionable = (
         "not actionable" in current_text
@@ -504,6 +517,145 @@ def _is_no_action(recommended_action: str) -> bool:
 
 def _action_text(recommended_action: str) -> str:
     return recommended_action.lower().removeprefix("recommended action:").strip()
+
+
+def _display_action_text(recommended_action: str) -> str:
+    return recommended_action.removeprefix("Recommended action:").strip()
+
+
+def _recommended_action_text(
+    recommended_action: str,
+    *,
+    status: dict[str, str],
+    events: list[dict[str, object]],
+    investigation_references: list[dict[str, str]],
+) -> str:
+    action = _action_text(recommended_action)
+    display_action = _display_action_text(recommended_action)
+    if not display_action:
+        return recommended_action
+    if (
+        status.get("label") == "Healthy"
+        and _mentions_symptoms_or_affected_window(action)
+        and (events or investigation_references)
+    ):
+        return (
+            "No immediate network change is recommended. If people noticed "
+            "symptoms during the affected window, compare reports with the "
+            "investigation."
+        )
+    return display_action
+
+
+def _mentions_symptoms_or_affected_window(action: str) -> bool:
+    return any(
+        term in action
+        for term in (
+            "noticed",
+            "symptom",
+            "affected",
+            "matched",
+            "during",
+        )
+    )
+
+
+def _current_status_label(label: str) -> str:
+    if label == "Healthy":
+        return "Healthy now"
+    if label == "Watch":
+        return "Watch now"
+    return label
+
+
+def _historical_findings(events: list[dict[str, object]]) -> list[str]:
+    findings: list[str] = []
+    for event in events:
+        summary = str(event.get("summary") or "").strip()
+        if not summary:
+            continue
+        affected_window = str(event.get("affected_window") or "").strip()
+        if affected_window:
+            summary = f"{summary} Affected window: {affected_window}."
+        findings.append(summary)
+    return findings[:3]
+
+
+def _uncertainty_items(
+    explanation: dict[str, object],
+    events: list[dict[str, object]],
+) -> list[str]:
+    candidates: list[str] = []
+    candidates.extend(
+        _uncertainty_candidate_texts(
+            explanation,
+            fields=("summary", "why", "confidence_reason"),
+        )
+    )
+    candidates.extend(_supporting_fact_texts(explanation.get("supporting_facts")))
+    candidates.extend(_trace_texts(explanation.get("recommendation_trace")))
+    for event in events:
+        candidates.extend(
+            _uncertainty_candidate_texts(
+                event,
+                fields=("summary", "why", "confidence_reason"),
+            )
+        )
+        candidates.extend(_supporting_fact_texts(event.get("supporting_facts")))
+        candidates.extend(_trace_texts(event.get("recommendation_trace")))
+        candidates.extend(str(item) for item in _list_value(event.get("related_events")))
+
+    uncertain: list[str] = []
+    for candidate in candidates:
+        text = candidate.strip()
+        if text and _looks_uncertain(text) and text not in uncertain:
+            uncertain.append(text)
+    return uncertain[:3]
+
+
+def _uncertainty_candidate_texts(
+    item: dict[str, object],
+    *,
+    fields: tuple[str, ...],
+) -> list[str]:
+    return [str(item.get(field) or "") for field in fields]
+
+
+def _supporting_fact_texts(value: object) -> list[str]:
+    texts: list[str] = []
+    for fact in _dict_list(value):
+        for key in ("summary", "source", "reference"):
+            text = str(fact.get(key) or "").strip()
+            if text:
+                texts.append(text)
+    return texts
+
+
+def _trace_texts(value: object) -> list[str]:
+    texts: list[str] = []
+    for step in _dict_list(value):
+        detail = str(step.get("detail") or "").strip()
+        if detail:
+            texts.append(detail)
+    return texts
+
+
+def _looks_uncertain(text: str) -> bool:
+    lowered = text.lower()
+    uncertainty_terms = (
+        "unclear",
+        "does not clearly distinguish",
+        "cannot distinguish",
+        "not enough evidence",
+        "available evidence",
+        "local wi-fi",
+        "local wifi",
+        "router",
+        "upstream isp",
+        "upstream/path",
+        "upstream path",
+    )
+    return any(term in lowered for term in uncertainty_terms)
 
 
 def _important_lines(

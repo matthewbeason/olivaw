@@ -276,7 +276,7 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "Generated" in response.text
     assert re.search(r"Generated (just now|\d+ minutes? ago|today at)", response.text)
     assert "Refresh briefing" in response.text
-    assert "Current assessment" in response.text
+    assert "Current status" in response.text
     assert "Healthy" in response.text
     assert "Sources do not report a condition needing attention." in response.text
     assert "What Matters" in response.text
@@ -595,6 +595,101 @@ def test_briefing_route_renders_executive_summary_from_source_data(
     assert "What Matters" in response.text
     assert "Recommended Action" in response.text
     assert "No action." in response.text
+
+
+def test_briefing_separates_current_health_from_historical_slowdown(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-12T06:05:00+00:00",
+  "current_attribution": {
+    "label": "No active network issue detected",
+    "status": "no_issue_detected",
+    "confidence": "high"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Morning Brief",
+  "date": "2026-06-12",
+  "status": "Healthy",
+  "summary": "No active network issue is currently detected.",
+  "recommended_action": "Check whether symptoms matched the affected time.",
+  "events": [
+    {
+      "summary": "A sustained slowdown was observed earlier. User impact was possible.",
+      "status": "attention",
+      "severity": "attention",
+      "window_start": "2026-06-11 05:58",
+      "window_end": "2026-06-12 05:58",
+      "confidence": "low",
+      "confidence_reason": "Available evidence does not clearly distinguish local Wi-Fi/router from upstream ISP/path.",
+      "supporting_facts": [
+        {
+          "summary": "The affected window overlapped the Prime Observer investigation.",
+          "source": "prime_observer",
+          "reference": "viz/investigate.html?start=1&end=2"
+        }
+      ],
+      "recommendation_trace": {
+        "recommendation": "Check whether symptoms matched the affected time.",
+        "interpretation": "Core Signal supplied the historical finding."
+      },
+      "prime_observer_investigation": "viz/investigate.html?start=1&end=2"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Current status" in response.text
+    assert "Healthy now" in response.text
+    assert "No active network issue is currently detected." in response.text
+    assert "Historical Finding" in response.text
+    assert (
+        "A sustained slowdown was observed earlier. User impact was possible."
+        in response.text
+    )
+    assert "Affected window: 2026-06-11 05:58 to 2026-06-12 05:58." in response.text
+    assert "What Remains Uncertain" in response.text
+    assert (
+        "Available evidence does not clearly distinguish local Wi-Fi/router "
+        "from upstream ISP/path."
+    ) in response.text
+    assert (
+        "No immediate network change is recommended. If people noticed symptoms "
+        "during the affected window, compare reports with the investigation."
+    ) in response.text
+    executive_section = response.text.split('<section class="details-stack">', 1)[0]
+    assert "no_issue_detected" not in executive_section
+    assert "Action Needed" not in executive_section
 
 
 def test_briefing_investigate_further_renders_navigation_actions(

@@ -426,13 +426,26 @@ def _prime_network_lines(item: dict[str, object]) -> list[str]:
     lines = [
         f"- Network attribution generated at {report_date}.",
         f"  - Current LAN/WAN state: {current}",
-        f"  - Current status: {status}",
+        f"  - Current network state: {_network_status_label(status)}",
         f"  - Confidence: {confidence}",
     ]
     window = str(item.get("window_label") or "").strip()
     if window:
         lines.append(f"  - Latest window state: {window}")
     return lines
+
+
+def _network_status_label(status: str) -> str:
+    labels = {
+        "no_issue_detected": "no active issue detected",
+        "issue_detected": "issue detected",
+        "likely_local": "likely local LAN or Wi-Fi",
+        "likely_upstream": "likely upstream ISP or path",
+        "mixed": "mixed local and upstream signals",
+        "unknown": "unknown",
+    }
+    normalized = status.strip().lower()
+    return labels.get(normalized, status.strip() or "unknown")
 
 
 def _prime_latest_sample_lines(item: dict[str, object]) -> list[str]:
