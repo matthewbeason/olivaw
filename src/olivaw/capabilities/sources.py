@@ -143,4 +143,15 @@ def _item_detail_lines(item: object, *, indent: str) -> list[str]:
                 lines.append(f"{indent}  Supporting facts: {len(supporting_facts)}")
             if event.get("confidence_reason"):
                 lines.append(f"{indent}  Why: {event['confidence_reason']}")
+            attribution = event.get("attribution_assessment")
+            if isinstance(attribution, dict) and attribution.get("value"):
+                lines.append(
+                    f"{indent}  Attribution assessment: {attribution['value']}"
+                )
+            strength = event.get("evidence_strength")
+            if isinstance(strength, dict) and strength.get("value"):
+                lines.append(f"{indent}  Evidence strength: {strength['value']}")
+            uncertainties = event.get("uncertainties")
+            if isinstance(uncertainties, list):
+                lines.append(f"{indent}  Uncertainties: {len(uncertainties)}")
     return lines

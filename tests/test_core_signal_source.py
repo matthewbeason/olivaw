@@ -218,6 +218,70 @@ def test_core_signal_source_preserves_json_event_metadata(tmp_path):
     )
 
 
+def test_core_signal_source_preserves_wave_3b_uncertainty_and_attribution(tmp_path):
+    (tmp_path / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Attention",
+  "summary": "The network had a sustained slowdown period.",
+  "uncertainties": [
+    "Unable to distinguish ISP congestion from transient routing issues."
+  ],
+  "attribution_assessment": {
+    "candidate": "upstream",
+    "confidence": "medium",
+    "reason": "WAN degraded while LAN remained healthy."
+  },
+  "evidence_strength": {
+    "rating": "moderate",
+    "reason": "Multiple sustained WAN periods were observed."
+  },
+  "events": [
+    {
+      "summary": "Sustained slowdown was detected.",
+      "uncertainties": [
+        "No evidence currently links the slowdown to local Wi-Fi."
+      ],
+      "attribution_assessment": {
+        "candidate": "upstream",
+        "confidence": "medium",
+        "reason": "WAN degraded while LAN remained healthy."
+      },
+      "evidence_strength": {
+        "rating": "moderate",
+        "reason": "Multiple sustained WAN periods were observed."
+      }
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    payload = CoreSignalSource(directory=tmp_path).fetch()
+
+    item = payload["items"][0]
+    assert item["uncertainties"] == [
+        "Unable to distinguish ISP congestion from transient routing issues."
+    ]
+    assert item["attribution_assessment"] == {
+        "value": "upstream",
+        "confidence": "medium",
+        "reason": "WAN degraded while LAN remained healthy.",
+    }
+    assert item["evidence_strength"] == {
+        "value": "moderate",
+        "reason": "Multiple sustained WAN periods were observed.",
+    }
+    event = item["events"][0]
+    assert event["uncertainties"] == [
+        "No evidence currently links the slowdown to local Wi-Fi."
+    ]
+    assert event["attribution_assessment"]["value"] == "upstream"
+    assert event["evidence_strength"]["value"] == "moderate"
+
+
 def test_core_signal_source_preserves_confidence_label_metadata(tmp_path):
     (tmp_path / "latest.json").write_text(
         """
@@ -383,6 +447,50 @@ def test_source_briefing_renders_core_signal_event_metadata(tmp_path):
     assert "Issue location: Likely upstream/ISP issue" in briefing.text
     assert "Evidence: Prime Observer incident attribution" in briefing.text
     assert "View investigation: viz/investigate.html?start=1&end=2" in briefing.text
+
+
+def test_source_briefing_renders_wave_3b_metadata(tmp_path):
+    (tmp_path / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Attention",
+  "summary": "The network had a sustained slowdown period.",
+  "events": [
+    {
+      "summary": "Sustained slowdown was detected.",
+      "uncertainties": [
+        "Unable to distinguish ISP congestion from transient routing issues."
+      ],
+      "attribution_assessment": {
+        "candidate": "upstream",
+        "confidence": "medium",
+        "reason": "WAN degraded while LAN remained healthy."
+      },
+      "evidence_strength": {
+        "rating": "moderate",
+        "reason": "Multiple sustained WAN periods were observed."
+      }
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    registry = SourceRegistry()
+    registry.register(CoreSignalSource(directory=tmp_path))
+
+    briefing = compose_source_briefing(registry=registry)
+
+    assert "Uncertainty: Unable to distinguish ISP congestion" in briefing.text
+    assert "Attribution assessment: upstream" in briefing.text
+    assert "Attribution confidence: medium" in briefing.text
+    assert "Attribution reason: WAN degraded while LAN remained healthy." in briefing.text
+    assert "Evidence strength: moderate" in briefing.text
+    assert (
+        "Evidence strength reason: Multiple sustained WAN periods were observed."
+        in briefing.text
+    )
 
 
 def test_source_briefing_keeps_prime_observer_and_core_signal_semantics_separate(

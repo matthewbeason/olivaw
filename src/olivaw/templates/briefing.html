@@ -41,7 +41,7 @@
           <p class="action-copy">{{ item }}</p>
         {% endfor %}
       {% else %}
-        <p class="action-copy">No explicit uncertainty was supplied by Core Signal.</p>
+        <p class="action-copy">No explicit uncertainty information was provided.</p>
       {% endif %}
     </div>
   </section>
@@ -59,6 +59,68 @@
           <li>No source-backed priority signals are available.</li>
         {% endfor %}
       </ul>
+    </article>
+
+    <article class="briefing-section">
+      <div class="section-heading">
+        <p class="card-label">What We Know</p>
+        <h2>Facts and observations</h2>
+      </div>
+      <ul class="clean-list priority-list">
+        {% for item in dashboard.what_we_know %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li>No source-backed facts or observations are available.</li>
+        {% endfor %}
+      </ul>
+      <p class="source-footnote">
+        Evidence comes from Prime Observer and Core Signal supporting facts; presentation is by Olivaw.
+      </p>
+    </article>
+
+    <article class="briefing-section">
+      <div class="section-heading">
+        <p class="card-label">What We Think</p>
+        <h2>Interpretation and attribution</h2>
+      </div>
+      {% set thought = dashboard.what_we_think %}
+      {% if thought %}
+        <dl class="event-meta explanation-meta">
+          {% if thought.value %}
+            <dt>Attribution assessment</dt>
+            <dd>{{ thought.value }}</dd>
+          {% else %}
+            <dt>Attribution assessment</dt>
+            <dd>No Core Signal attribution assessment is available.</dd>
+          {% endif %}
+          {% if thought.confidence %}
+            <dt>Confidence</dt>
+            <dd>{{ thought.confidence }}</dd>
+          {% endif %}
+          {% if thought.reason %}
+            <dt>Reason</dt>
+            <dd>{{ thought.reason }}</dd>
+          {% endif %}
+        </dl>
+      {% else %}
+        <p class="card-copy">No Core Signal attribution assessment is available.</p>
+      {% endif %}
+      {% set strength = dashboard.evidence_strength %}
+      {% if strength %}
+        <dl class="event-meta explanation-meta">
+          {% if strength.value %}
+            <dt>Evidence strength</dt>
+            <dd>{{ strength.value }}</dd>
+          {% endif %}
+          {% if strength.reason %}
+            <dt>Reason</dt>
+            <dd>{{ strength.reason }}</dd>
+          {% endif %}
+        </dl>
+      {% endif %}
+      <p class="source-footnote">
+        Interpretation, confidence, evidence strength, and attribution assessment are Core Signal metadata.
+      </p>
     </article>
 
     <article class="briefing-section">
@@ -84,6 +146,14 @@
           {% if explanation.why %}
             <dt>Reasoning</dt>
             <dd>{{ explanation.why }}</dd>
+          {% endif %}
+          {% if explanation.attribution_assessment.value %}
+            <dt>Attribution assessment</dt>
+            <dd>{{ explanation.attribution_assessment.value }}</dd>
+          {% endif %}
+          {% if explanation.evidence_strength.value %}
+            <dt>Evidence strength</dt>
+            <dd>{{ explanation.evidence_strength.value }}</dd>
           {% endif %}
           {% if explanation.supporting_fact_count %}
             <dt>Supporting facts</dt>
@@ -251,6 +321,36 @@
             {% if event.confidence_reason %}
               <dt>Rationale</dt>
               <dd>{{ event.confidence_reason }}</dd>
+            {% endif %}
+            {% if event.attribution_assessment.value %}
+              <dt>Attribution assessment</dt>
+              <dd>{{ event.attribution_assessment.value }}</dd>
+            {% endif %}
+            {% if event.attribution_assessment.confidence %}
+              <dt>Attribution confidence</dt>
+              <dd>{{ event.attribution_assessment.confidence }}</dd>
+            {% endif %}
+            {% if event.attribution_assessment.reason %}
+              <dt>Attribution reason</dt>
+              <dd>{{ event.attribution_assessment.reason }}</dd>
+            {% endif %}
+            {% if event.evidence_strength.value %}
+              <dt>Evidence strength</dt>
+              <dd>{{ event.evidence_strength.value }}</dd>
+            {% endif %}
+            {% if event.evidence_strength.reason %}
+              <dt>Evidence strength reason</dt>
+              <dd>{{ event.evidence_strength.reason }}</dd>
+            {% endif %}
+            {% if event.uncertainties %}
+              <dt>Uncertainties</dt>
+              <dd>
+                <ul class="clean-list">
+                  {% for uncertainty in event.uncertainties %}
+                    <li>{{ uncertainty }}</li>
+                  {% endfor %}
+                </ul>
+              </dd>
             {% endif %}
             {% if event.supporting_fact_count %}
               <dt>Supporting facts</dt>

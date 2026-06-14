@@ -265,6 +265,15 @@ class CoreSignalSource:
             recommendation_trace=_coerce_recommendation_trace(
                 data.get("recommendation_trace")
             ),
+            uncertainties=_coerce_uncertainties(data.get("uncertainties")),
+            attribution_assessment=_coerce_label_reason_mapping(
+                data.get("attribution_assessment"),
+                value_keys=("candidate", "assessment", "label"),
+            ),
+            evidence_strength=_coerce_label_reason_mapping(
+                data.get("evidence_strength"),
+                value_keys=("rating", "strength", "label"),
+            ),
             interpretation_source=_first_present(data.get("interpretation_source")),
             related_events=_coerce_related_events(data.get("related_events")),
             preview=summary,
@@ -571,6 +580,36 @@ def _coerce_related_events(value: object) -> list[dict[str, str]]:
     return related_events[:5]
 
 
+def _coerce_uncertainties(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()][:5]
+    text = str(value or "").strip()
+    if text:
+        return [text]
+    return []
+
+
+def _coerce_label_reason_mapping(
+    value: object,
+    *,
+    value_keys: tuple[str, ...],
+) -> dict[str, str]:
+    if isinstance(value, dict):
+        label = _first_present(*(value.get(key) for key in value_keys))
+        confidence = _first_present(value.get("confidence"))
+        reason = _first_present(value.get("reason"), value.get("rationale"))
+        result = {
+            "value": label or "",
+            "confidence": confidence or "",
+            "reason": reason or "",
+        }
+        return {key: item for key, item in result.items() if item}
+    text = str(value or "").strip()
+    if text:
+        return {"value": text}
+    return {}
+
+
 def _event_from_mapping(data: dict[str, Any]) -> dict[str, object]:
     if not data:
         return {}
@@ -618,6 +657,15 @@ def _event_from_mapping(data: dict[str, Any]) -> dict[str, object]:
         "supporting_facts": _coerce_supporting_facts(data.get("supporting_facts")),
         "recommendation_trace": _coerce_recommendation_trace(
             data.get("recommendation_trace")
+        ),
+        "uncertainties": _coerce_uncertainties(data.get("uncertainties")),
+        "attribution_assessment": _coerce_label_reason_mapping(
+            data.get("attribution_assessment"),
+            value_keys=("candidate", "assessment", "label"),
+        ),
+        "evidence_strength": _coerce_label_reason_mapping(
+            data.get("evidence_strength"),
+            value_keys=("rating", "strength", "label"),
         ),
         "interpretation_source": str(data.get("interpretation_source") or ""),
         "related_events": _coerce_related_events(data.get("related_events")),

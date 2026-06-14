@@ -540,6 +540,206 @@ def test_briefing_route_renders_compact_wave_metadata(monkeypatch, tmp_path):
     assert "June 8 WAN samples" in response.text
 
 
+def test_briefing_route_renders_wave_3b_uncertainty_attribution_and_strength(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-12T06:05:00+00:00",
+  "current_attribution": {
+    "label": "No active network issue detected",
+    "status": "no_issue_detected",
+    "confidence": "high"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "date": "2026-06-12",
+  "status": "Attention",
+  "summary": "Sustained slowdown was detected.",
+  "confidence": "medium",
+  "confidence_reason": "WAN degraded while LAN remained healthy.",
+  "supporting_facts": [
+    {"summary": "WAN degradation exceeded the sustained threshold.", "source": "prime_observer"},
+    {"summary": "LAN remained below local degradation thresholds.", "source": "prime_observer"}
+  ],
+  "uncertainties": [
+    "Unable to distinguish ISP congestion from transient routing issues."
+  ],
+  "attribution_assessment": {
+    "candidate": "upstream",
+    "confidence": "medium",
+    "reason": "WAN degraded while LAN remained healthy."
+  },
+  "evidence_strength": {
+    "rating": "moderate",
+    "reason": "Multiple sustained WAN periods were observed."
+  },
+  "recommended_action": "Check provider status if symptoms matched."
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "What We Know" in response.text
+    assert "WAN degradation exceeded the sustained threshold." in response.text
+    assert "LAN remained below local degradation thresholds." in response.text
+    assert "What We Think" in response.text
+    assert "Attribution assessment" in response.text
+    assert ">upstream<" in response.text
+    assert "Evidence strength" in response.text
+    assert ">moderate<" in response.text
+    assert "Multiple sustained WAN periods were observed." in response.text
+    assert "What Remains Uncertain" in response.text
+    assert (
+        "Unable to distinguish ISP congestion from transient routing issues."
+        in response.text
+    )
+    assert "Confidence" in response.text
+    assert ">medium<" in response.text
+
+
+def test_briefing_route_handles_mixed_old_and_new_core_signal_events(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Watch",
+  "summary": "Mixed event formats.",
+  "events": [
+    {
+      "summary": "Older v0.6.0 event.",
+      "confidence": "low",
+      "confidence_reason": "Older confidence reason."
+    },
+    {
+      "summary": "New v0.7.0 event.",
+      "confidence": "medium",
+      "uncertainties": ["Routing cause remains uncertain."],
+      "attribution_assessment": {
+        "candidate": "upstream",
+        "confidence": "medium",
+        "reason": "WAN degraded while LAN remained healthy."
+      },
+      "evidence_strength": {
+        "rating": "moderate",
+        "reason": "Multiple sustained WAN periods were observed."
+      }
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Older v0.6.0 event." in response.text
+    assert "New v0.7.0 event." in response.text
+    assert "Routing cause remains uncertain." in response.text
+    assert "Attribution assessment" in response.text
+    assert "Evidence strength" in response.text
+
+
+def test_briefing_route_v06_events_do_not_infer_wave_3b_fields(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Healthy",
+  "summary": "Stable.",
+  "events": [
+    {
+      "summary": "Older event shape.",
+      "confidence": "low",
+      "confidence_reason": "Available evidence does not clearly distinguish local Wi-Fi/router from upstream ISP/path."
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Older event shape." in response.text
+    assert "No explicit uncertainty information was provided." in response.text
+    executive_section = response.text.split('<section class="details-stack">', 1)[0]
+    assert "Available evidence does not clearly distinguish" in response.text
+    uncertainty_block = executive_section.split("What Remains Uncertain", 1)[1].split(
+        "</section>",
+        1,
+    )[0]
+    assert "Available evidence does not clearly distinguish" not in uncertainty_block
+    assert "No Core Signal attribution assessment is available." in response.text
+
+
 def test_briefing_route_renders_executive_summary_from_source_data(
     monkeypatch,
     tmp_path,
@@ -679,10 +879,7 @@ def test_briefing_separates_current_health_from_historical_slowdown(
     )
     assert "Affected window: 2026-06-11 05:58 to 2026-06-12 05:58." in response.text
     assert "What Remains Uncertain" in response.text
-    assert (
-        "Available evidence does not clearly distinguish local Wi-Fi/router "
-        "from upstream ISP/path."
-    ) in response.text
+    assert "No explicit uncertainty information was provided." in response.text
     assert (
         "No immediate network change is recommended. If people noticed symptoms "
         "during the affected window, compare reports with the investigation."

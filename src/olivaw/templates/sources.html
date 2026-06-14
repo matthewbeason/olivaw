@@ -175,6 +175,31 @@
                       {% if event.confidence_reason %}
                         <dt>Why</dt><dd>{{ event.confidence_reason }}</dd>
                       {% endif %}
+                      {% if event.attribution_assessment %}
+                        <dt>Attribution assessment</dt>
+                        <dd>
+                          {{ event.attribution_assessment.value }}
+                          {% if event.attribution_assessment.confidence %}
+                            <br>Confidence: {{ event.attribution_assessment.confidence }}
+                          {% endif %}
+                          {% if event.attribution_assessment.reason %}
+                            <br>Reason: {{ event.attribution_assessment.reason }}
+                          {% endif %}
+                        </dd>
+                      {% endif %}
+                      {% if event.evidence_strength %}
+                        <dt>Evidence strength</dt>
+                        <dd>
+                          {{ event.evidence_strength.value }}
+                          {% if event.evidence_strength.reason %}
+                            <br>Reason: {{ event.evidence_strength.reason }}
+                          {% endif %}
+                        </dd>
+                      {% endif %}
+                      {% if event.uncertainties %}
+                        <dt>Uncertainties</dt>
+                        <dd>{{ event.uncertainties | join("; ") }}</dd>
+                      {% endif %}
                       {% if event.supporting_facts %}
                         <dt>Supporting facts</dt>
                         <dd>{{ event.supporting_facts | length }}</dd>

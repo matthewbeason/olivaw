@@ -233,6 +233,8 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
                     detail = _one_line_preview(str(step.get("detail") or ""))
                     if detail:
                         lines.append(f"    - {stage}: {detail}")
+            lines.extend(_uncertainty_lines(item, indent="  "))
+            lines.extend(_assessment_lines(item, indent="  "))
             interpretation_source = str(item.get("interpretation_source") or "").strip()
             if interpretation_source:
                 lines.append(f"  - Interpretation source: {interpretation_source}")
@@ -321,6 +323,8 @@ def _core_signal_event_lines(event: dict[str, object]) -> list[str]:
             detail = _one_line_preview(str(step.get("detail") or ""))
             if detail:
                 lines.append(f"      - {stage}: {detail}")
+    lines.extend(_uncertainty_lines(event, indent="    "))
+    lines.extend(_assessment_lines(event, indent="    "))
     attribution = str(event.get("attribution_source") or "").strip()
     if attribution:
         lines.append(f"    - Evidence: {_source_label(attribution)}")
@@ -338,6 +342,50 @@ def _core_signal_event_lines(event: dict[str, object]) -> list[str]:
         lines.append("    - Related events:")
         for related_event in related_events[:3]:
             lines.append(f"      - Related event: {_related_event_label(related_event)}")
+    return lines
+
+
+def _uncertainty_lines(item: dict[str, object], *, indent: str) -> list[str]:
+    raw_uncertainties = item.get("uncertainties", [])
+    if isinstance(raw_uncertainties, list):
+        uncertainties = [
+            str(value).strip() for value in raw_uncertainties if str(value).strip()
+        ]
+    else:
+        text = str(raw_uncertainties or "").strip()
+        uncertainties = [text] if text else []
+    if not uncertainties:
+        return []
+    lines = [f"{indent}- Uncertainties:"]
+    for uncertainty in uncertainties[:5]:
+        lines.append(f"{indent}  - Uncertainty: {_one_line_preview(uncertainty)}")
+    return lines
+
+
+def _assessment_lines(item: dict[str, object], *, indent: str) -> list[str]:
+    lines: list[str] = []
+    attribution = _dict(item.get("attribution_assessment"))
+    attribution_value = str(attribution.get("value") or "").strip()
+    if attribution_value:
+        lines.append(f"{indent}- Attribution assessment: {attribution_value}")
+    attribution_confidence = str(attribution.get("confidence") or "").strip()
+    if attribution_confidence:
+        lines.append(f"{indent}  - Attribution confidence: {attribution_confidence}")
+    attribution_reason = str(attribution.get("reason") or "").strip()
+    if attribution_reason:
+        lines.append(
+            f"{indent}  - Attribution reason: {_one_line_preview(attribution_reason)}"
+        )
+
+    strength = _dict(item.get("evidence_strength"))
+    strength_value = str(strength.get("value") or "").strip()
+    if strength_value:
+        lines.append(f"{indent}- Evidence strength: {strength_value}")
+    strength_reason = str(strength.get("reason") or "").strip()
+    if strength_reason:
+        lines.append(
+            f"{indent}  - Evidence strength reason: {_one_line_preview(strength_reason)}"
+        )
     return lines
 
 
@@ -699,6 +747,12 @@ def _dicts(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _dict(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return value
+    return {}
 
 
 def _one_line_preview(text: str) -> str:

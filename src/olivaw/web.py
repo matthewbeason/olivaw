@@ -171,6 +171,12 @@ def _briefing_dashboard(
     )
     historical_findings = _historical_findings(events)
     uncertainty_items = _uncertainty_items(explanation, events)
+    attribution_assessment = _first_metadata_mapping(
+        explanation,
+        events,
+        "attribution_assessment",
+    )
+    evidence_strength = _first_metadata_mapping(explanation, events, "evidence_strength")
 
     return _normalize_briefing_dashboard(
         {
@@ -188,6 +194,17 @@ def _briefing_dashboard(
             "generated_display": generated_at,
             "sources": sources,
             "what_matters": what_matters,
+            "what_we_know": _what_we_know(
+                network=network,
+                core=core,
+                explanation=explanation,
+            ),
+            "what_we_think": _what_we_think(
+                explanation=explanation,
+                attribution_assessment=attribution_assessment,
+            ),
+            "attribution_assessment": attribution_assessment,
+            "evidence_strength": evidence_strength,
             "historical_findings": historical_findings,
             "uncertainty_items": uncertainty_items,
             "worth_knowing": worth,
@@ -219,6 +236,7 @@ def _briefing_dashboard(
 def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, object]:
     list_keys = (
         "what_matters",
+        "what_we_know",
         "worth_knowing",
         "historical_findings",
         "uncertainty_items",
@@ -243,12 +261,28 @@ def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, obj
     explanation["recommendation_trace"] = _dict_list(
         explanation.get("recommendation_trace")
     )
+    explanation["uncertainties"] = [
+        str(item) for item in _list_value(explanation.get("uncertainties"))
+    ]
+    explanation["attribution_assessment"] = _metadata_mapping(
+        explanation.get("attribution_assessment")
+    )
+    explanation["evidence_strength"] = _metadata_mapping(
+        explanation.get("evidence_strength")
+    )
     dashboard["core_signal_explanation"] = explanation
 
     events = []
     for event in _dict_list(dashboard.get("core_signal_events")):
         event["supporting_facts"] = _dict_list(event.get("supporting_facts"))
         event["recommendation_trace"] = _dict_list(event.get("recommendation_trace"))
+        event["uncertainties"] = [
+            str(item) for item in _list_value(event.get("uncertainties"))
+        ]
+        event["attribution_assessment"] = _metadata_mapping(
+            event.get("attribution_assessment")
+        )
+        event["evidence_strength"] = _metadata_mapping(event.get("evidence_strength"))
         event["related_events"] = _list_value(event.get("related_events"))
         events.append(event)
     dashboard["core_signal_events"] = events
@@ -282,6 +316,13 @@ def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, obj
         "supporting": _dict_list(actions.get("supporting")),
         "technical": _dict_list(actions.get("technical")),
     }
+    dashboard["what_we_think"] = _metadata_mapping(dashboard.get("what_we_think"))
+    dashboard["attribution_assessment"] = _metadata_mapping(
+        dashboard.get("attribution_assessment")
+    )
+    dashboard["evidence_strength"] = _metadata_mapping(
+        dashboard.get("evidence_strength")
+    )
 
     return dashboard
 
@@ -298,6 +339,17 @@ def _dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _metadata_mapping(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for key in ("value", "confidence", "reason"):
+        item = str(value.get(key) or "").strip()
+        if item:
+            result[key] = item
+    return result
 
 
 def _markdown_sections(text: str) -> dict[str, list[str]]:
@@ -450,6 +502,65 @@ def _what_matters(
     return deduped[:5]
 
 
+def _what_we_know(
+    *,
+    network: list[str],
+    core: list[str],
+    explanation: dict[str, object],
+) -> list[str]:
+    candidates = [
+        *network[:3],
+        *core[:2],
+    ]
+    for fact in _dict_list(explanation.get("supporting_facts")):
+        summary = str(fact.get("summary") or "").strip()
+        if summary:
+            candidates.append(summary)
+
+    deduped: list[str] = []
+    for item in candidates:
+        cleaned = _clean_briefing_line(item)
+        if cleaned and cleaned not in deduped:
+            deduped.append(cleaned)
+    return deduped[:5]
+
+
+def _what_we_think(
+    *,
+    explanation: dict[str, object],
+    attribution_assessment: dict[str, str],
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for key in ("value", "confidence", "reason"):
+        value = str(attribution_assessment.get(key) or "").strip()
+        if value:
+            result[key] = value
+    confidence = str(explanation.get("confidence") or "").strip()
+    if confidence and "confidence" not in result:
+        result["confidence"] = confidence
+    reason = str(
+        explanation.get("confidence_reason") or explanation.get("why") or ""
+    ).strip()
+    if reason and "reason" not in result:
+        result["reason"] = reason
+    return result
+
+
+def _first_metadata_mapping(
+    explanation: dict[str, object],
+    events: list[dict[str, object]],
+    key: str,
+) -> dict[str, str]:
+    mapping = _metadata_mapping(explanation.get(key))
+    if mapping:
+        return mapping
+    for event in events:
+        mapping = _metadata_mapping(event.get(key))
+        if mapping:
+            return mapping
+    return {}
+
+
 def _current_core_lines(lines: list[str]) -> list[str]:
     current: list[str] = []
     for line in lines:
@@ -585,77 +696,16 @@ def _uncertainty_items(
     explanation: dict[str, object],
     events: list[dict[str, object]],
 ) -> list[str]:
-    candidates: list[str] = []
-    candidates.extend(
-        _uncertainty_candidate_texts(
-            explanation,
-            fields=("summary", "why", "confidence_reason"),
-        )
-    )
-    candidates.extend(_supporting_fact_texts(explanation.get("supporting_facts")))
-    candidates.extend(_trace_texts(explanation.get("recommendation_trace")))
+    candidates = [str(item) for item in _list_value(explanation.get("uncertainties"))]
     for event in events:
-        candidates.extend(
-            _uncertainty_candidate_texts(
-                event,
-                fields=("summary", "why", "confidence_reason"),
-            )
-        )
-        candidates.extend(_supporting_fact_texts(event.get("supporting_facts")))
-        candidates.extend(_trace_texts(event.get("recommendation_trace")))
-        candidates.extend(str(item) for item in _list_value(event.get("related_events")))
+        candidates.extend(str(item) for item in _list_value(event.get("uncertainties")))
 
     uncertain: list[str] = []
     for candidate in candidates:
         text = candidate.strip()
-        if text and _looks_uncertain(text) and text not in uncertain:
+        if text and text not in uncertain:
             uncertain.append(text)
-    return uncertain[:3]
-
-
-def _uncertainty_candidate_texts(
-    item: dict[str, object],
-    *,
-    fields: tuple[str, ...],
-) -> list[str]:
-    return [str(item.get(field) or "") for field in fields]
-
-
-def _supporting_fact_texts(value: object) -> list[str]:
-    texts: list[str] = []
-    for fact in _dict_list(value):
-        for key in ("summary", "source", "reference"):
-            text = str(fact.get(key) or "").strip()
-            if text:
-                texts.append(text)
-    return texts
-
-
-def _trace_texts(value: object) -> list[str]:
-    texts: list[str] = []
-    for step in _dict_list(value):
-        detail = str(step.get("detail") or "").strip()
-        if detail:
-            texts.append(detail)
-    return texts
-
-
-def _looks_uncertain(text: str) -> bool:
-    lowered = text.lower()
-    uncertainty_terms = (
-        "unclear",
-        "does not clearly distinguish",
-        "cannot distinguish",
-        "not enough evidence",
-        "available evidence",
-        "local wi-fi",
-        "local wifi",
-        "router",
-        "upstream isp",
-        "upstream/path",
-        "upstream path",
-    )
-    return any(term in lowered for term in uncertainty_terms)
+    return uncertain[:5]
 
 
 def _important_lines(
@@ -778,6 +828,25 @@ def _core_signal_events(lines: list[str]) -> list[dict[str, object]]:
             current["recommended_action"] = value
         elif key == "issue location":
             current["issue_location"] = value
+        elif key == "uncertainty":
+            uncertainties = current.setdefault("uncertainties", [])
+            if isinstance(uncertainties, list) and value:
+                uncertainties.append(value)
+        elif key == "attribution assessment":
+            _set_metadata_value(current, "attribution_assessment", "value", value)
+        elif key == "attribution confidence":
+            _set_metadata_value(
+                current,
+                "attribution_assessment",
+                "confidence",
+                value,
+            )
+        elif key == "attribution reason":
+            _set_metadata_value(current, "attribution_assessment", "reason", value)
+        elif key == "evidence strength":
+            _set_metadata_value(current, "evidence_strength", "value", value)
+        elif key == "evidence strength reason":
+            _set_metadata_value(current, "evidence_strength", "reason", value)
         elif key == "evidence":
             current["evidence"] = value
         elif key in {"interpretation", "presentation", "interpretation source"}:
@@ -835,6 +904,25 @@ def _core_signal_explanation(
             trace = explanation.setdefault("recommendation_trace", [])
             if isinstance(trace, list):
                 trace.append({"stage": label.strip(), "detail": value})
+        elif key == "uncertainty":
+            uncertainties = explanation.setdefault("uncertainties", [])
+            if isinstance(uncertainties, list) and value:
+                uncertainties.append(value)
+        elif key == "attribution assessment":
+            _set_metadata_value(explanation, "attribution_assessment", "value", value)
+        elif key == "attribution confidence":
+            _set_metadata_value(
+                explanation,
+                "attribution_assessment",
+                "confidence",
+                value,
+            )
+        elif key == "attribution reason":
+            _set_metadata_value(explanation, "attribution_assessment", "reason", value)
+        elif key == "evidence strength":
+            _set_metadata_value(explanation, "evidence_strength", "value", value)
+        elif key == "evidence strength reason":
+            _set_metadata_value(explanation, "evidence_strength", "reason", value)
 
     if not any(
         explanation.get(key)
@@ -845,6 +933,9 @@ def _core_signal_explanation(
             "supporting_fact_count",
             "supporting_facts",
             "recommendation_trace",
+            "uncertainties",
+            "attribution_assessment",
+            "evidence_strength",
         )
     ):
         for event in events:
@@ -869,6 +960,9 @@ def _core_signal_explanation(
                         "supporting_fact_count",
                         "supporting_facts",
                         "recommendation_trace",
+                        "uncertainties",
+                        "attribution_assessment",
+                        "evidence_strength",
                     )
                     if key in event
                 }
@@ -876,6 +970,19 @@ def _core_signal_explanation(
 
     explanation.pop("_trace_open", None)
     return explanation
+
+
+def _set_metadata_value(
+    item: dict[str, object],
+    mapping_key: str,
+    field: str,
+    value: str,
+) -> None:
+    if not value:
+        return
+    mapping = item.setdefault(mapping_key, {})
+    if isinstance(mapping, dict):
+        mapping[field] = value
 
 
 def _investigation_references(
