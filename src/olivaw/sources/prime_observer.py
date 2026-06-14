@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 
 from olivaw.sources.base import SourceHealth, SourcePayload
 
@@ -24,6 +27,7 @@ PREVIEW_CHARS = 600
 class PrimeObserverSource:
     directory: Path
     enabled: bool = True
+    base_url: str | None = None
     source_id: str = "prime_observer"
     display_name: str = "Prime Observer"
 
@@ -137,6 +141,9 @@ class PrimeObserverSource:
             report_type="investigation",
             key="generated_at",
         )
+        investigate_url = _investigate_url(self.base_url)
+        investigate_status = _investigate_http_status(investigate_url)
+        links_enabled = bool(investigate_url)
 
         if "investigation_index" in loaded_types:
             index_status = (
@@ -179,6 +186,15 @@ class PrimeObserverSource:
             )
         return {
             "configured_path": str(self.directory),
+            "base_url": self.base_url or "",
+            "investigate_http_url": investigate_url,
+            "investigate_http_status": investigate_status,
+            "investigation_links_enabled": "yes" if links_enabled else "no",
+            "link_configuration_guidance": _link_configuration_guidance(
+                directory=self.directory,
+                base_url=self.base_url,
+                investigate_status=investigate_status,
+            ),
             "selection": (
                 "Selected files: " + ", ".join(selected)
                 if selected
@@ -555,6 +571,65 @@ def _preview(path: Path) -> str:
 
 def _modified(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
+def _investigate_url(base_url: str | None) -> str:
+    if not base_url:
+        return ""
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return urljoin(base_url.rstrip("/") + "/", "investigate.html")
+
+
+def _investigate_http_status(url: str) -> str:
+    if not url:
+        return "not checked; Prime Observer base URL is not configured."
+    request = Request(url, method="HEAD")
+    try:
+        with urlopen(request, timeout=1.0) as response:
+            return f"reachable ({response.status})"
+    except HTTPError as exc:
+        if exc.code == 405:
+            return _investigate_http_get_status(url)
+        return f"not reachable ({exc.code})"
+    except (OSError, URLError) as exc:
+        return f"not reachable ({type(exc).__name__})"
+
+
+def _investigate_http_get_status(url: str) -> str:
+    request = Request(url, method="GET")
+    try:
+        with urlopen(request, timeout=1.0) as response:
+            return f"reachable ({response.status})"
+    except HTTPError as exc:
+        return f"not reachable ({exc.code})"
+    except (OSError, URLError) as exc:
+        return f"not reachable ({type(exc).__name__})"
+
+
+def _link_configuration_guidance(
+    *,
+    directory: Path,
+    base_url: str | None,
+    investigate_status: str,
+) -> str:
+    if not base_url:
+        guidance = (
+            "Configure sources.prime_observer.base_url or "
+            "OLIVAW_PRIME_OBSERVER_BASE_URL to the HTTP server serving this "
+            "Prime Observer viz directory."
+        )
+        if directory.name == "viz":
+            return guidance + " Example: http://127.0.0.1:8000"
+        return guidance
+    if investigate_status.startswith("reachable"):
+        return "Investigation links are enabled."
+    return (
+        "Investigation links are configured, but investigate.html was not "
+        "reachable over HTTP. Confirm the Prime Observer local server is running "
+        "and that the base URL serves the configured viz directory."
+    )
 
 
 def _mtime(path: Path) -> float:

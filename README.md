@@ -150,6 +150,7 @@ max_bytes = 1048576
 [sources.prime_observer]
 directory = "~/prime-observer/viz"
 enabled = true
+base_url = "http://127.0.0.1:8000"
 
 [sources.core_signal]
 directory = "~/core-signal/reports"
@@ -179,6 +180,7 @@ Environment overrides:
 - `OLIVAW_CLOUD_FALLBACK`
 - `OLIVAW_PRIME_OBSERVER_DIR`
 - `OLIVAW_PRIME_OBSERVER_ENABLED`
+- `OLIVAW_PRIME_OBSERVER_BASE_URL`
 - `OLIVAW_CORE_SIGNAL_DIR`
 - `OLIVAW_CORE_SIGNAL_ENABLED`
 - `OPENAI_API_KEY` or `OLIVAW_OPENAI_API_KEY`
@@ -190,6 +192,7 @@ OPENAI_API_KEY=
 OLIVAW_CLOUD_ENABLED=false
 OLIVAW_CLOUD_MODEL=gpt-4.1-mini
 OLIVAW_CLOUD_FALLBACK=disabled
+OLIVAW_PRIME_OBSERVER_BASE_URL=http://127.0.0.1:8000
 ```
 
 ## CLI
@@ -399,8 +402,11 @@ reference. The `/briefing` dashboard shows the event summary, severity/status,
 affected window, confidence when available, issue location, recommended action,
 and a `View investigation` affordance. Absolute `http` or `https` Prime Observer
 references become links. Local references such as
-`viz/investigate.html?start=...&end=...` are shown as text so Olivaw does not
-create broken links or imply it owns the Prime Observer evidence view.
+`viz/investigate.html?start=...&end=...` become links when
+`sources.prime_observer.base_url` or `OLIVAW_PRIME_OBSERVER_BASE_URL` points to
+the Prime Observer HTTP server. If no base URL is configured, Olivaw shows
+configuration guidance instead of creating broken links or implying it owns the
+Prime Observer evidence view.
 
 Prime Observer and Core Signal stay separate:
 

@@ -77,6 +77,11 @@ def _diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
     lines: list[str] = []
     for key, label in (
         ("configured_path", "Configured path"),
+        ("base_url", "Prime Observer base URL"),
+        ("investigate_http_url", "Prime Observer investigate URL"),
+        ("investigate_http_status", "Prime Observer investigate HTTP"),
+        ("investigation_links_enabled", "Investigation links enabled"),
+        ("link_configuration_guidance", "Link configuration guidance"),
         ("selection", "Selection"),
         ("investigation_index", "Investigation index"),
         ("investigation_index_path", "Investigation index path"),

@@ -142,6 +142,27 @@ openai_api_key = "config-secret"
     assert "config-secret" not in str(public)
 
 
+def test_environment_overrides_prime_observer_base_url(monkeypatch, tmp_path):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = default_user_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[sources.prime_observer]
+directory = "~/prime-observer/viz"
+enabled = true
+base_url = "http://127.0.0.1:8766"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_BASE_URL", "http://127.0.0.1:8000")
+
+    config = load_config()
+
+    assert config.prime_observer.base_url == "http://127.0.0.1:8000"
+
+
 def test_blank_environment_values_do_not_mask_user_config(monkeypatch, tmp_path):
     clear_config_env(monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))

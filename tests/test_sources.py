@@ -121,6 +121,53 @@ def test_sources_report_distinguishes_investigation_index_load_status(tmp_path):
     assert "Investigation: June 8 WAN samples (viz/investigation.json)" in text
 
 
+def test_sources_report_shows_prime_observer_link_diagnostics(tmp_path):
+    prime_dir = tmp_path / "prime" / "viz"
+    prime_dir.mkdir(parents=True)
+    (prime_dir / "investigate.html").write_text("investigation", encoding="utf-8")
+    (prime_dir / "investigation_index.json").write_text("[]", encoding="utf-8")
+    config = OlivawConfig(
+        files=FileSourceConfig(directory=tmp_path / "files"),
+        prime_observer=PrimeObserverSourceConfig(
+            directory=prime_dir,
+            base_url="http://127.0.0.1:1",
+        ),
+    )
+
+    report = SourceInspectionCapability().run(config=config)
+    text = format_sources_report(report)
+
+    assert "Prime Observer base URL: http://127.0.0.1:1" in text
+    assert (
+        "Prime Observer investigate URL: http://127.0.0.1:1/investigate.html"
+        in text
+    )
+    assert "Investigation links enabled: yes" in text
+    assert "Prime Observer investigate HTTP: not reachable" in text
+
+
+def test_sources_report_gives_guidance_when_prime_observer_base_url_missing(tmp_path):
+    prime_dir = tmp_path / "prime" / "viz"
+    prime_dir.mkdir(parents=True)
+    (prime_dir / "investigation_index.json").write_text("[]", encoding="utf-8")
+    config = OlivawConfig(
+        files=FileSourceConfig(directory=tmp_path / "files"),
+        prime_observer=PrimeObserverSourceConfig(directory=prime_dir),
+    )
+
+    report = SourceInspectionCapability().run(config=config)
+    text = format_sources_report(report)
+
+    assert "Prime Observer base URL:" not in text
+    assert (
+        "Prime Observer investigate HTTP: not checked; Prime Observer base URL "
+        "is not configured."
+    ) in text
+    assert "Investigation links enabled: no" in text
+    assert "Configure sources.prime_observer.base_url" in text
+    assert "OLIVAW_PRIME_OBSERVER_BASE_URL" in text
+
+
 def test_sources_report_surfaces_core_signal_event_metadata(tmp_path):
     core_dir = tmp_path / "core"
     core_dir.mkdir()

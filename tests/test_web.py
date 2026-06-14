@@ -777,6 +777,56 @@ def test_briefing_investigate_further_renders_navigation_actions(
     assert 'href="file://' not in response.text
 
 
+def test_briefing_resolves_relative_viz_reference_against_base_url(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_PRIME_OBSERVER_BASE_URL",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime" / "viz"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir(parents=True)
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Watch",
+  "summary": "Affected telemetry exists.",
+  "events": [
+    {
+      "summary": "Sustained slowdown.",
+      "prime_observer_investigation": "viz/investigate.html?start=2026-06-08T11%3A00%3A00Z&end=2026-06-08T11%3A15%3A00Z",
+      "attribution_source": "prime_observer_incident"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert (
+        'href="http://127.0.0.1:8000/investigate.html?'
+        "start=2026-06-08T11%3A00%3A00Z&amp;"
+        'end=2026-06-08T11%3A15%3A00Z"'
+    ) in response.text
+
+
 def test_briefing_investigate_further_disables_local_investigation_without_base_url(
     monkeypatch,
     tmp_path,
@@ -796,6 +846,15 @@ def test_briefing_investigate_further_disables_local_investigation_without_base_
     core_dir.mkdir()
     files_dir.mkdir()
     (prime_dir / "investigate.html").write_text("investigation", encoding="utf-8")
+    config_path = tmp_path / "olivaw.toml"
+    config_path.write_text(
+        """
+[sources.prime_observer]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OLIVAW_CONFIG", str(config_path))
     monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
     monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
     monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
@@ -833,6 +892,42 @@ def test_briefing_investigate_further_disables_local_investigation_without_base_
     main_section = response.text.split("Technical references", 1)[0]
     assert "viz/investigate.html?start=1&amp;end=2" not in main_section
     assert "viz/investigate.html?start=1&amp;end=2" in response.text
+
+
+def test_sources_route_renders_prime_observer_base_url_diagnostics(
+    monkeypatch,
+    tmp_path,
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_PRIME_OBSERVER_BASE_URL",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime" / "viz"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir(parents=True)
+    core_dir.mkdir()
+    files_dir.mkdir()
+    (prime_dir / "investigation_index.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_BASE_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+
+    response = client.get("/sources")
+
+    assert response.status_code == 200
+    assert "Prime Observer base URL" in response.text
+    assert "http://127.0.0.1:1" in response.text
+    assert "Prime Observer investigate URL" in response.text
+    assert "http://127.0.0.1:1/investigate.html" in response.text
+    assert "Prime Observer investigate HTTP" in response.text
+    assert "Investigation links enabled" in response.text
+    assert ">yes<" in response.text
 
 
 def test_briefing_investigate_further_empty_state(monkeypatch, tmp_path):

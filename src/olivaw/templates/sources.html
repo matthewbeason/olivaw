@@ -26,6 +26,26 @@
                 {% if payload.diagnostics.configured_path %}
                   <dt>Configured path</dt><dd><code>{{ payload.diagnostics.configured_path }}</code></dd>
                 {% endif %}
+                {% if payload.diagnostics.base_url is defined %}
+                  <dt>Prime Observer base URL</dt>
+                  <dd>{{ payload.diagnostics.base_url or "not configured" }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigate_http_url %}
+                  <dt>Prime Observer investigate URL</dt>
+                  <dd><a href="{{ payload.diagnostics.investigate_http_url }}">{{ payload.diagnostics.investigate_http_url }}</a></dd>
+                {% endif %}
+                {% if payload.diagnostics.investigate_http_status %}
+                  <dt>Prime Observer investigate HTTP</dt>
+                  <dd>{{ payload.diagnostics.investigate_http_status }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.investigation_links_enabled %}
+                  <dt>Investigation links enabled</dt>
+                  <dd>{{ payload.diagnostics.investigation_links_enabled }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.link_configuration_guidance %}
+                  <dt>Link configuration guidance</dt>
+                  <dd>{{ payload.diagnostics.link_configuration_guidance }}</dd>
+                {% endif %}
                 {% if payload.diagnostics.investigation_index %}
                   <dt>Investigation index</dt>
                   <dd>{{ payload.diagnostics.investigation_index }}</dd>

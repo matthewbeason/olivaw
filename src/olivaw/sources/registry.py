@@ -46,6 +46,7 @@ def create_default_registry(config: OlivawConfig | None = None) -> SourceRegistr
         PrimeObserverSource(
             directory=resolved_config.prime_observer.directory,
             enabled=resolved_config.prime_observer.enabled,
+            base_url=resolved_config.prime_observer.base_url,
         )
     )
     registry.register(
