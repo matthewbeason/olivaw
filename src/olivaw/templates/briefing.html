@@ -4,7 +4,9 @@
     <div>
       <p class="eyebrow">Intelligence briefing</p>
       <h1>Today&apos;s Assessment</h1>
-      <p class="lede">{{ dashboard.executive_summary }}</p>
+      <p class="lede">
+        Generated {{ dashboard.generated_display }} from {{ dashboard.sources | join(", ") }} source-backed inputs.
+      </p>
     </div>
     <form method="get" action="/briefing">
       <button type="submit">Refresh briefing</button>
@@ -35,63 +37,69 @@
       <p class="source-footnote">Action meaning is shown only when supplied by Core Signal.</p>
     </div>
     <div class="assessment-action">
-      <p class="card-label">What Remains Uncertain</p>
-      {% if dashboard.uncertainty_items %}
-        {% for item in dashboard.uncertainty_items %}
-          <p class="action-copy">{{ item }}</p>
-        {% endfor %}
+      {% set evidence = dashboard.investigation_actions %}
+      <p class="card-label">Evidence Package</p>
+      <p class="card-copy">
+        Supporting telemetry evidence is available from Prime Observer when linked source metadata is present.
+      </p>
+      {% if evidence.primary %}
+        <ul class="clean-list action-list compact-action-list">
+          {% for action in evidence.primary %}
+            {% if action.label == "Open Evidence Package" %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  <span class="unavailable-action">{{ action.label }}</span>
+                {% endif %}
+                {% if action.unavailable_reason %}
+                  <span class="action-helper">{{ action.unavailable_reason }}</span>
+                {% endif %}
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
       {% else %}
-        <p class="action-copy">No explicit uncertainty information was provided.</p>
+        <p class="action-copy">No source-backed evidence package link is available.</p>
       {% endif %}
     </div>
   </section>
 
-  <section class="briefing-flow" aria-label="Executive briefing">
-    <article class="briefing-section">
-      <div class="section-heading">
-        <p class="card-label">What Matters</p>
-        <h2>Priority signals</h2>
-      </div>
-      <ul class="clean-list priority-list">
+  <section class="details-stack">
+    <details class="disclosure-card">
+      <summary>What Matters and priority signals</summary>
+      <ul class="clean-list priority-list detail-list-body">
         {% for item in dashboard.what_matters %}
           <li>{{ item }}</li>
         {% else %}
           <li>No source-backed priority signals are available.</li>
         {% endfor %}
       </ul>
-    </article>
+    </details>
 
-    <article class="briefing-section">
-      <div class="section-heading">
-        <p class="card-label">What We Know</p>
-        <h2>Facts and observations</h2>
-      </div>
-      <ul class="clean-list priority-list">
+    <details class="disclosure-card">
+      <summary>What We Know</summary>
+      <ul class="clean-list priority-list detail-list-body">
         {% for item in dashboard.what_we_know %}
           <li>{{ item }}</li>
         {% else %}
           <li>No source-backed facts or observations are available.</li>
         {% endfor %}
       </ul>
-      <p class="source-footnote">
+      <p class="source-footnote disclosure-footnote">
         Evidence comes from Prime Observer and Core Signal supporting facts; presentation is by Olivaw.
       </p>
-    </article>
+    </details>
 
-    <article class="briefing-section">
-      <div class="section-heading">
-        <p class="card-label">What We Think</p>
-        <h2>Interpretation and attribution</h2>
-      </div>
+    <details class="disclosure-card">
+      <summary>What We Think</summary>
       {% set thought = dashboard.what_we_think %}
-      {% if thought %}
-        <dl class="event-meta explanation-meta">
+      {% set strength = dashboard.evidence_strength %}
+      {% if thought or strength %}
+        <dl class="event-meta detail-items">
           {% if thought.value %}
             <dt>Attribution assessment</dt>
             <dd>{{ thought.value }}</dd>
-          {% else %}
-            <dt>Attribution assessment</dt>
-            <dd>No Core Signal attribution assessment is available.</dd>
           {% endif %}
           {% if thought.confidence %}
             <dt>Confidence</dt>
@@ -101,36 +109,28 @@
             <dt>Reason</dt>
             <dd>{{ thought.reason }}</dd>
           {% endif %}
-        </dl>
-      {% else %}
-        <p class="card-copy">No Core Signal attribution assessment is available.</p>
-      {% endif %}
-      {% set strength = dashboard.evidence_strength %}
-      {% if strength %}
-        <dl class="event-meta explanation-meta">
           {% if strength.value %}
             <dt>Evidence strength</dt>
             <dd>{{ strength.value }}</dd>
           {% endif %}
           {% if strength.reason %}
-            <dt>Reason</dt>
+            <dt>Evidence strength reason</dt>
             <dd>{{ strength.reason }}</dd>
           {% endif %}
         </dl>
+      {% else %}
+        <p class="card-copy details-copy">No Core Signal attribution assessment is available.</p>
       {% endif %}
-      <p class="source-footnote">
+      <p class="source-footnote disclosure-footnote">
         Interpretation, confidence, evidence strength, and attribution assessment are Core Signal metadata.
       </p>
-    </article>
+    </details>
 
-    <article class="briefing-section">
-      <div class="section-heading">
-        <p class="card-label">Why We Believe This</p>
-        <h2>Explanation</h2>
-      </div>
+    <details class="disclosure-card">
+      <summary>Why We Believe This</summary>
       {% set explanation = dashboard.core_signal_explanation %}
       {% if explanation %}
-        <dl class="event-meta explanation-meta">
+        <dl class="event-meta detail-items">
           {% if explanation.summary %}
             <dt>Finding</dt>
             <dd>{{ explanation.summary }}</dd>
@@ -159,123 +159,115 @@
             <dt>Supporting facts</dt>
             <dd>{{ explanation.supporting_fact_count }}</dd>
           {% endif %}
+          {% for fact in explanation.supporting_facts %}
+            <dt>Fact</dt>
+            <dd>
+              {{ fact.summary }}
+              {% if fact.source %}<br>Source: {{ fact.source }}{% endif %}
+              {% if fact.reference %}<br>Reference: {{ fact.reference }}{% endif %}
+            </dd>
+          {% endfor %}
+          {% for step in explanation.recommendation_trace %}
+            <dt>{{ step.stage }}</dt>
+            <dd>{{ step.detail }}</dd>
+          {% endfor %}
         </dl>
-        {% if explanation.supporting_facts or explanation.recommendation_trace %}
-          <details class="inline-details">
-            <summary>Show supporting detail</summary>
+      {% else %}
+        <p class="card-copy details-copy">No Core Signal explanation metadata is available.</p>
+      {% endif %}
+      <p class="source-footnote disclosure-footnote">
+        Explanation, recommendations, and relationships are Core Signal metadata.
+      </p>
+    </details>
+
+    <details class="disclosure-card">
+      <summary>What Remains Uncertain</summary>
+      <ul class="clean-list detail-list-body">
+        {% for item in dashboard.uncertainty_items %}
+          <li>{{ item }}</li>
+        {% else %}
+          <li>No explicit uncertainty information was provided.</li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    {% set evidence = dashboard.investigation_actions %}
+    <details class="disclosure-card">
+      <summary>Evidence package details</summary>
+      {% if evidence.primary or evidence.event_navigation or evidence.supporting or evidence.technical %}
+        {% if evidence.primary %}
+          <h3 class="briefing-subhead disclosure-subhead">Telemetry evidence</h3>
+          <ul class="clean-list action-list detail-list-body">
+            {% for action in evidence.primary %}
+              {% if action.label != "Open Evidence Package" %}
+                <li>
+                  {% if action.href %}
+                    <a href="{{ action.href }}">{{ action.label }}</a>
+                  {% else %}
+                    {{ action.label }}
+                  {% endif %}
+                  {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+                </li>
+              {% endif %}
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        {% if evidence.event_navigation %}
+          <h3 class="briefing-subhead disclosure-subhead">Telemetry evidence</h3>
+          <ul class="clean-list action-list detail-list-body">
+            {% for action in evidence.event_navigation %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  {{ action.label }}
+                {% endif %}
+                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        {% if evidence.supporting %}
+          <h3 class="briefing-subhead disclosure-subhead">Supporting evidence</h3>
+          <ul class="clean-list action-list detail-list-body">
+            {% for action in evidence.supporting %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  {{ action.label }}
+                {% endif %}
+                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        {% if evidence.technical %}
+          <details class="inline-details nested-detail">
+            <summary>Technical references</summary>
             <dl class="event-meta detail-items">
-              {% for fact in explanation.supporting_facts %}
-                <dt>Fact</dt>
+              {% for reference in evidence.technical %}
+                <dt>{{ reference.label }}</dt>
                 <dd>
-                  {{ fact.summary }}
-                  {% if fact.source %}<br>Source: {{ fact.source }}{% endif %}
-                  {% if fact.reference %}<br>Reference: {{ fact.reference }}{% endif %}
+                  {{ reference.target }}
+                  {% if reference.href %}<br>Link: {{ reference.href }}{% endif %}
+                  {% if reference.attribution %}<br>Source: {{ reference.attribution }}{% endif %}
                 </dd>
-              {% endfor %}
-              {% for step in explanation.recommendation_trace %}
-                <dt>{{ step.stage }}</dt>
-                <dd>{{ step.detail }}</dd>
               {% endfor %}
             </dl>
           </details>
         {% endif %}
       {% else %}
-        <p class="card-copy">No Core Signal explanation metadata is available.</p>
+        <p class="card-copy details-copy">No supporting evidence links are available for this briefing.</p>
       {% endif %}
-      {% if explanation.confidence or explanation.confidence_reason %}
-        <p class="source-footnote">
-          Confidence, rationale, supporting facts, recommendations, and relationships are Core Signal metadata.
-        </p>
-      {% elif explanation %}
-        <p class="source-footnote">
-          Explanation, recommendations, and relationships are Core Signal metadata.
-        </p>
-      {% endif %}
-    </article>
-
-    {% set investigation = dashboard.investigation_actions %}
-    <article class="briefing-section">
-      <div class="section-heading">
-        <p class="card-label">Investigate Further</p>
-        <h2>Navigation</h2>
-      </div>
-      {% if investigation.primary or investigation.event_navigation or investigation.supporting %}
-        {% if investigation.primary %}
-          <h3 class="briefing-subhead">Primary investigation</h3>
-          <ul class="clean-list action-list">
-            {% for action in investigation.primary %}
-              <li>
-                {% if action.href %}
-                  <a href="{{ action.href }}">{{ action.label }}</a>
-                {% else %}
-                  <span class="unavailable-action">{{ action.label }}</span>
-                {% endif %}
-                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
-                {% if action.unavailable_reason %}
-                  <span class="action-helper">{{ action.unavailable_reason }}</span>
-                {% endif %}
-              </li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-
-        {% if investigation.event_navigation %}
-          <h3 class="briefing-subhead">Event navigation</h3>
-          <ul class="clean-list action-list">
-            {% for action in investigation.event_navigation %}
-              <li>
-                {% if action.href %}
-                  <a href="{{ action.href }}">{{ action.label }}</a>
-                {% else %}
-                  {{ action.label }}
-                {% endif %}
-                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
-              </li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-
-        {% if investigation.supporting %}
-          <h3 class="briefing-subhead">Supporting references</h3>
-          <ul class="clean-list action-list">
-            {% for action in investigation.supporting %}
-              <li>
-                {% if action.href %}
-                  <a href="{{ action.href }}">{{ action.label }}</a>
-                {% else %}
-                  {{ action.label }}
-                {% endif %}
-                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
-              </li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-      {% else %}
-        <p class="card-copy">No investigation links are available for this briefing.</p>
-      {% endif %}
-
-      {% if investigation.technical %}
-        <details class="inline-details">
-          <summary>Technical references</summary>
-          <dl class="event-meta detail-items">
-            {% for reference in investigation.technical %}
-              <dt>{{ reference.label }}</dt>
-              <dd>
-                {{ reference.target }}
-                {% if reference.href %}<br>Link: {{ reference.href }}{% endif %}
-                {% if reference.attribution %}<br>Source: {{ reference.attribution }}{% endif %}
-              </dd>
-            {% endfor %}
-          </dl>
-        </details>
-      {% endif %}
-      <p class="source-footnote">
-        Investigation and evidence links come from Prime Observer; interpretation and supporting context come from Core Signal; navigation presentation is by Olivaw.
+      <p class="source-footnote disclosure-footnote">
+        Evidence and telemetry links come from Prime Observer; interpretation and supporting context come from Core Signal; navigation presentation is by Olivaw.
       </p>
-    </article>
-  </section>
+    </details>
 
-  <section class="details-stack">
     <details class="disclosure-card">
       <summary>Source attribution and current facts</summary>
       <dl class="detail-list">
@@ -373,12 +365,12 @@
               <dd>{{ event.presentation }}</dd>
             {% endif %}
             {% if event.investigation_reference %}
-              <dt>Investigation</dt>
+              <dt>Evidence package</dt>
               <dd>
                 {% if event.investigation_href %}
-                  <a href="{{ event.investigation_href }}">View investigation</a>
+                  <a href="{{ event.investigation_href }}">Open evidence package</a>
                 {% else %}
-                  View investigation: {{ event.investigation_reference }}
+                  Evidence package reference: {{ event.investigation_reference }}
                 {% endif %}
               </dd>
             {% endif %}
@@ -390,7 +382,7 @@
     </details>
 
     <details class="disclosure-card">
-      <summary>Prime Observer investigations</summary>
+      <summary>Prime Observer evidence artifacts</summary>
       {% for investigation in dashboard.prime_investigations %}
         <section class="event-item detail-event">
           <h3>{{ investigation.title }}</h3>
@@ -411,14 +403,14 @@
               <dt>Target</dt>
               <dd>
                 {% if investigation.href %}
-                  <a href="{{ investigation.href }}">Open investigation</a>
+                  <a href="{{ investigation.href }}">Open evidence artifact</a>
                 {% else %}
                   {{ investigation.path }}
                 {% endif %}
               </dd>
             {% endif %}
             <dt>Attribution</dt>
-            <dd>Prime Observer investigation index</dd>
+            <dd>Prime Observer evidence index</dd>
           </dl>
         </section>
       {% else %}
@@ -427,7 +419,7 @@
 
       {% if dashboard.prime_investigation_navigation %}
         <details class="inline-details nested-detail">
-          <summary>Investigation navigation</summary>
+          <summary>Evidence navigation</summary>
           <dl class="event-meta detail-items">
             {% for item in dashboard.prime_investigation_navigation %}
               <dt>{{ item.label }}</dt>
@@ -445,7 +437,7 @@
           {% for group in dashboard.prime_nearby_events %}
             <section class="event-item detail-event">
               {% if group.anchor %}
-                <h3>Events in the same investigation window for {{ group.anchor }}</h3>
+                <h3>Events in the same evidence window for {{ group.anchor }}</h3>
               {% else %}
                 <h3>Nearby events</h3>
               {% endif %}

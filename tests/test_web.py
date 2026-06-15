@@ -280,9 +280,10 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "Healthy" in response.text
     assert "Sources do not report a condition needing attention." in response.text
     assert "What Matters" in response.text
-    assert "Priority signals" in response.text
+    assert "priority signals" in response.text
     assert "Recommended Action" in response.text
     assert "Why We Believe This" in response.text
+    assert "Evidence Package" in response.text
     assert "Source attribution and current facts" in response.text
     assert "Core Signal events" in response.text
     assert "Category:" not in response.text
@@ -536,7 +537,7 @@ def test_briefing_route_renders_compact_wave_metadata(monkeypatch, tmp_path):
     assert "WAN p95 exceeded threshold." in response.text
     assert "Recommendation trace" in response.text
     assert "Related events" in response.text
-    assert "Show supporting detail" in response.text
+    assert "Why We Believe This" in response.text
     assert "June 8 WAN samples" in response.text
 
 
@@ -732,12 +733,8 @@ def test_briefing_route_v06_events_do_not_infer_wave_3b_fields(
     assert "No explicit uncertainty information was provided." in response.text
     executive_section = response.text.split('<section class="details-stack">', 1)[0]
     assert "Available evidence does not clearly distinguish" in response.text
-    uncertainty_block = executive_section.split("What Remains Uncertain", 1)[1].split(
-        "</section>",
-        1,
-    )[0]
-    assert "Available evidence does not clearly distinguish" not in uncertainty_block
-    assert "No Core Signal attribution assessment is available." in response.text
+    assert "What Remains Uncertain" not in executive_section
+    assert "Attribution assessment" not in executive_section
 
 
 def test_briefing_route_renders_executive_summary_from_source_data(
@@ -791,7 +788,6 @@ def test_briefing_route_renders_executive_summary_from_source_data(
     assert response.status_code == 200
     assert "Today&apos;s Assessment" in response.text
     assert "Current LAN and WAN state appears stable." in response.text
-    assert "Prime Observer reports: Current LAN/WAN state: No active network issue detected." in response.text
     assert "What Matters" in response.text
     assert "Recommended Action" in response.text
     assert "No action." in response.text
@@ -882,11 +878,13 @@ def test_briefing_separates_current_health_from_historical_slowdown(
     assert "No explicit uncertainty information was provided." in response.text
     assert (
         "No immediate network change is recommended. If people noticed symptoms "
-        "during the affected window, compare reports with the investigation."
+        "during the affected window, compare reports with the evidence package."
     ) in response.text
     executive_section = response.text.split('<section class="details-stack">', 1)[0]
     assert "no_issue_detected" not in executive_section
     assert "Action Needed" not in executive_section
+    assert "Prime Observer investigation" not in executive_section
+    assert ">viz/investigate.html" not in executive_section
 
 
 def test_briefing_investigate_further_renders_navigation_actions(
@@ -958,7 +956,7 @@ def test_briefing_investigate_further_renders_navigation_actions(
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "Open investigation evidence" in response.text
+    assert "Open Evidence Package" in response.text
     assert "Review affected telemetry window" in response.text
     assert "Inspect first event" in response.text
     assert "Inspect last event" in response.text
@@ -1076,9 +1074,9 @@ enabled = true
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "Open investigation evidence" in response.text
+    assert "Open Evidence Package" in response.text
     assert (
-        "Start the Prime Observer local server to open investigation evidence."
+        "Start the Prime Observer local server to open telemetry evidence."
         in response.text
     )
     assert '<a href="file://' not in response.text
@@ -1158,7 +1156,7 @@ def test_briefing_investigate_further_empty_state(monkeypatch, tmp_path):
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "No investigation links are available for this briefing." in response.text
+    assert "No source-backed evidence package link is available." in response.text
 
 
 def test_briefing_route_does_not_invent_recommendation_or_confidence(
@@ -1539,7 +1537,7 @@ Technical Evidence:
     assert 'href="viz/investigate.html?start=1&amp;end=2"' not in response.text
 
 
-def test_briefing_route_renders_prime_observer_investigation_metadata(
+def test_briefing_route_renders_prime_observer_evidence_metadata(
     monkeypatch,
     tmp_path,
 ):
@@ -1589,13 +1587,13 @@ def test_briefing_route_renders_prime_observer_investigation_metadata(
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "Prime Observer investigations" in response.text
+    assert "Prime Observer evidence artifacts" in response.text
     assert "June 8 WAN samples" in response.text
-    assert "Prime Observer investigation index" in response.text
-    assert "Investigation navigation" in response.text
+    assert "Prime Observer evidence index" in response.text
+    assert "Evidence navigation" in response.text
     assert "Prime Observer navigation metadata" in response.text
     assert "Nearby events" in response.text
-    assert "Events in the same investigation window for Last sample" in response.text
+    assert "Events in the same evidence window for Last sample" in response.text
     assert "Prime Observer factual discovery" in response.text
     assert "Core Signal" in response.text
     forbidden = ("correlated", "caused by", "likely related", "root cause")

@@ -653,7 +653,7 @@ def _recommended_action_text(
         return (
             "No immediate network change is recommended. If people noticed "
             "symptoms during the affected window, compare reports with the "
-            "investigation."
+            "evidence package."
         )
     return display_action
 
@@ -688,6 +688,12 @@ def _historical_findings(events: list[dict[str, object]]) -> list[str]:
         affected_window = str(event.get("affected_window") or "").strip()
         if affected_window:
             summary = f"{summary} Affected window: {affected_window}."
+        issue_location = str(event.get("issue_location") or "").strip()
+        if issue_location:
+            summary = f"{summary} Evidence suggests {issue_location}."
+        confidence = str(event.get("confidence") or "").strip()
+        if confidence:
+            summary = f"{summary} Confidence: {confidence}."
         findings.append(summary)
     return findings[:3]
 
@@ -1118,13 +1124,13 @@ def _investigation_actions(
             unavailable_reason = ""
             if not href:
                 unavailable_reason = (
-                    "Start the Prime Observer local server to open investigation "
+                    "Start the Prime Observer local server to open telemetry "
                     "evidence."
                 )
             actions["primary"].append(
                 {
-                    "label": "Open investigation evidence",
-                    "detail": "Prime Observer investigation",
+                    "label": "Open Evidence Package",
+                    "detail": "Prime Observer telemetry evidence",
                     "href": href,
                     "target": target,
                     "attribution": "Prime Observer",
