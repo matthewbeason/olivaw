@@ -57,7 +57,7 @@ def test_home_route_renders():
 
 
 def test_templates_do_not_hot_reload_in_long_running_web_process():
-    assert app.version == "0.6.1"
+    assert app.version == "0.7.0"
     from olivaw.web import templates
 
     assert templates.env.auto_reload is False
@@ -276,18 +276,29 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "Generated" in response.text
     assert re.search(r"Generated (just now|\d+ minutes? ago|today at)", response.text)
     assert "Refresh briefing" in response.text
-    assert "Current status" in response.text
+    assert "Current Status" in response.text
     assert "Healthy" in response.text
     assert "Sources do not report a condition needing attention." in response.text
-    assert "What Matters" in response.text
-    assert "priority signals" in response.text
+    assert response.text.count('class="disclosure-card"') == 1
+    assert '<details class="disclosure-card" id="evidence-package">' in response.text
+    assert 'href="#evidence-package"' in response.text
+    assert "Open Evidence Package" in response.text
+    assert "<summary>What Matters" not in response.text
+    assert "<summary>What We Know" not in response.text
+    assert "<summary>What We Think" not in response.text
+    assert "<summary>Why We Believe This" not in response.text
+    assert "<summary>What Remains Uncertain" not in response.text
     assert "Recommended Action" in response.text
-    assert "Why We Believe This" in response.text
     assert "Evidence Package" in response.text
-    assert "Source attribution and current facts" in response.text
-    assert "Core Signal events" in response.text
+    assert "Facts" in response.text
+    assert "Interpretation" in response.text
+    assert "Uncertainty" in response.text
+    assert "Sources" in response.text
+    assert "Technical Details" in response.text
+    assert "<summary>Source attribution and current facts" not in response.text
+    assert "<summary>Core Signal events" not in response.text
     assert "Category:" not in response.text
-    assert "Show raw briefing" in response.text
+    assert "Raw briefing" in response.text
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
     assert "File found: status/system.txt" in response.text
@@ -531,13 +542,13 @@ def test_briefing_route_renders_compact_wave_metadata(monkeypatch, tmp_path):
     assert "Olivaw" in response.text
     assert "Confidence" in response.text
     assert "0.82" in response.text
-    assert "Why" in response.text
     assert "Matched sustained slowdown threshold." in response.text
     assert "Supporting facts" in response.text
     assert "WAN p95 exceeded threshold." in response.text
     assert "Recommendation trace" in response.text
     assert "Related events" in response.text
-    assert "Why We Believe This" in response.text
+    assert "Core Signal finding" in response.text
+    assert "<summary>Why We Believe This" not in response.text
     assert "June 8 WAN samples" in response.text
 
 
@@ -608,16 +619,19 @@ def test_briefing_route_renders_wave_3b_uncertainty_attribution_and_strength(
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "What We Know" in response.text
+    assert "Facts" in response.text
     assert "WAN degradation exceeded the sustained threshold." in response.text
     assert "LAN remained below local degradation thresholds." in response.text
-    assert "What We Think" in response.text
+    assert "Interpretation" in response.text
     assert "Attribution assessment" in response.text
     assert ">upstream<" in response.text
     assert "Evidence strength" in response.text
     assert ">moderate<" in response.text
     assert "Multiple sustained WAN periods were observed." in response.text
-    assert "What Remains Uncertain" in response.text
+    assert "Uncertainty" in response.text
+    assert "<summary>What We Know" not in response.text
+    assert "<summary>What We Think" not in response.text
+    assert "<summary>What Remains Uncertain" not in response.text
     assert (
         "Unable to distinguish ISP congestion from transient routing issues."
         in response.text
@@ -788,7 +802,8 @@ def test_briefing_route_renders_executive_summary_from_source_data(
     assert response.status_code == 200
     assert "Today&apos;s Assessment" in response.text
     assert "Current LAN and WAN state appears stable." in response.text
-    assert "What Matters" in response.text
+    assert "Priority signals" in response.text
+    assert "<summary>What Matters" not in response.text
     assert "Recommended Action" in response.text
     assert "No action." in response.text
 
@@ -865,7 +880,7 @@ def test_briefing_separates_current_health_from_historical_slowdown(
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "Current status" in response.text
+    assert "Current Status" in response.text
     assert "Healthy now" in response.text
     assert "No active network issue is currently detected." in response.text
     assert "Historical Finding" in response.text
@@ -874,7 +889,8 @@ def test_briefing_separates_current_health_from_historical_slowdown(
         in response.text
     )
     assert "Affected window: 2026-06-11 05:58 to 2026-06-12 05:58." in response.text
-    assert "What Remains Uncertain" in response.text
+    assert "Uncertainty" in response.text
+    assert "<summary>What Remains Uncertain" not in response.text
     assert "No explicit uncertainty information was provided." in response.text
     assert (
         "No immediate network change is recommended. If people noticed symptoms "
@@ -1156,7 +1172,9 @@ def test_briefing_investigate_further_empty_state(monkeypatch, tmp_path):
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "No source-backed evidence package link is available." in response.text
+    assert 'href="#evidence-package"' in response.text
+    assert "Open Evidence Package" in response.text
+    assert "No supporting evidence links are available for this briefing." in response.text
 
 
 def test_briefing_route_does_not_invent_recommendation_or_confidence(
@@ -1587,7 +1605,8 @@ def test_briefing_route_renders_prime_observer_evidence_metadata(
     response = client.get("/briefing")
 
     assert response.status_code == 200
-    assert "Prime Observer evidence artifacts" in response.text
+    assert "Artifact references" in response.text
+    assert "<summary>Prime Observer evidence artifacts" not in response.text
     assert "June 8 WAN samples" in response.text
     assert "Prime Observer evidence index" in response.text
     assert "Evidence navigation" in response.text

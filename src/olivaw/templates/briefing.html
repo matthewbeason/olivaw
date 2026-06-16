@@ -18,7 +18,7 @@
       <span class="status-pill status-{{ dashboard.status_tone }}">
         {{ dashboard.current_status_label }}
       </span>
-      <h2>Current status</h2>
+      <h2>Current Status</h2>
       <p>{{ dashboard.status_explanation }}</p>
     </div>
     <div class="assessment-action">
@@ -40,45 +40,24 @@
       {% set evidence = dashboard.investigation_actions %}
       <p class="card-label">Evidence Package</p>
       <p class="card-copy">
-        Supporting telemetry evidence is available from Prime Observer when linked source metadata is present.
+        Detailed supporting evidence, attribution, uncertainty, and source material are available.
       </p>
-      {% if evidence.primary %}
-        <ul class="clean-list action-list compact-action-list">
-          {% for action in evidence.primary %}
-            {% if action.label == "Open Evidence Package" %}
-              <li>
-                {% if action.href %}
-                  <a href="{{ action.href }}">{{ action.label }}</a>
-                {% else %}
-                  <span class="unavailable-action">{{ action.label }}</span>
-                {% endif %}
-                {% if action.unavailable_reason %}
-                  <span class="action-helper">{{ action.unavailable_reason }}</span>
-                {% endif %}
-              </li>
-            {% endif %}
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="action-copy">No source-backed evidence package link is available.</p>
-      {% endif %}
+      <ul class="clean-list action-list compact-action-list">
+        <li>
+          <a href="#evidence-package" data-evidence-package-trigger>
+            Open Evidence Package
+          </a>
+        </li>
+      </ul>
     </div>
   </section>
 
   <section class="details-stack">
-    <details class="disclosure-card">
-      <summary>What Matters and priority signals</summary>
-      <ul class="clean-list priority-list detail-list-body">
-        {% for item in dashboard.what_matters %}
-          <li>{{ item }}</li>
-        {% else %}
-          <li>No source-backed priority signals are available.</li>
-        {% endfor %}
-      </ul>
-    </details>
+    {% set evidence = dashboard.investigation_actions %}
+    <details class="disclosure-card" id="evidence-package">
+      <summary>Evidence Package</summary>
 
-    <details class="disclosure-card">
-      <summary>What We Know</summary>
+      <h3 class="briefing-subhead disclosure-subhead">Facts</h3>
       <ul class="clean-list priority-list detail-list-body">
         {% for item in dashboard.what_we_know %}
           <li>{{ item }}</li>
@@ -86,13 +65,19 @@
           <li>No source-backed facts or observations are available.</li>
         {% endfor %}
       </ul>
+      {% if dashboard.what_matters %}
+        <h4 class="briefing-subhead disclosure-subhead">Priority signals</h4>
+        <ul class="clean-list priority-list detail-list-body">
+          {% for item in dashboard.what_matters %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
       <p class="source-footnote disclosure-footnote">
-        Evidence comes from Prime Observer and Core Signal supporting facts; presentation is by Olivaw.
+        Facts come from Prime Observer and Core Signal supporting facts; presentation is by Olivaw.
       </p>
-    </details>
 
-    <details class="disclosure-card">
-      <summary>What We Think</summary>
+      <h3 class="briefing-subhead disclosure-subhead">Interpretation</h3>
       {% set thought = dashboard.what_we_think %}
       {% set strength = dashboard.evidence_strength %}
       {% if thought or strength %}
@@ -124,12 +109,10 @@
       <p class="source-footnote disclosure-footnote">
         Interpretation, confidence, evidence strength, and attribution assessment are Core Signal metadata.
       </p>
-    </details>
 
-    <details class="disclosure-card">
-      <summary>Why We Believe This</summary>
       {% set explanation = dashboard.core_signal_explanation %}
       {% if explanation %}
+        <h4 class="briefing-subhead disclosure-subhead">Core Signal finding</h4>
         <dl class="event-meta detail-items">
           {% if explanation.summary %}
             <dt>Finding</dt>
@@ -178,10 +161,8 @@
       <p class="source-footnote disclosure-footnote">
         Explanation, recommendations, and relationships are Core Signal metadata.
       </p>
-    </details>
 
-    <details class="disclosure-card">
-      <summary>What Remains Uncertain</summary>
+      <h3 class="briefing-subhead disclosure-subhead">Uncertainty</h3>
       <ul class="clean-list detail-list-body">
         {% for item in dashboard.uncertainty_items %}
           <li>{{ item }}</li>
@@ -189,32 +170,28 @@
           <li>No explicit uncertainty information was provided.</li>
         {% endfor %}
       </ul>
-    </details>
 
-    {% set evidence = dashboard.investigation_actions %}
-    <details class="disclosure-card">
-      <summary>Evidence package details</summary>
+      <h3 class="briefing-subhead disclosure-subhead">Sources</h3>
       {% if evidence.primary or evidence.event_navigation or evidence.supporting or evidence.technical %}
         {% if evidence.primary %}
-          <h3 class="briefing-subhead disclosure-subhead">Telemetry evidence</h3>
+          <h4 class="briefing-subhead disclosure-subhead">Evidence links</h4>
           <ul class="clean-list action-list detail-list-body">
             {% for action in evidence.primary %}
-              {% if action.label != "Open Evidence Package" %}
-                <li>
-                  {% if action.href %}
-                    <a href="{{ action.href }}">{{ action.label }}</a>
-                  {% else %}
-                    {{ action.label }}
-                  {% endif %}
-                  {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
-                </li>
-              {% endif %}
+              <li>
+                {% if action.href %}
+                  <a href="{{ action.href }}">{{ action.label }}</a>
+                {% else %}
+                  {{ action.label }}
+                {% endif %}
+                {% if action.detail %}<span>{{ action.detail }}</span>{% endif %}
+                {% if action.unavailable_reason %}<span class="action-helper">{{ action.unavailable_reason }}</span>{% endif %}
+              </li>
             {% endfor %}
           </ul>
         {% endif %}
 
         {% if evidence.event_navigation %}
-          <h3 class="briefing-subhead disclosure-subhead">Telemetry evidence</h3>
+          <h4 class="briefing-subhead disclosure-subhead">Telemetry evidence</h4>
           <ul class="clean-list action-list detail-list-body">
             {% for action in evidence.event_navigation %}
               <li>
@@ -230,7 +207,7 @@
         {% endif %}
 
         {% if evidence.supporting %}
-          <h3 class="briefing-subhead disclosure-subhead">Supporting evidence</h3>
+          <h4 class="briefing-subhead disclosure-subhead">Supporting evidence</h4>
           <ul class="clean-list action-list detail-list-body">
             {% for action in evidence.supporting %}
               <li>
@@ -266,10 +243,7 @@
       <p class="source-footnote disclosure-footnote">
         Evidence and telemetry links come from Prime Observer; interpretation and supporting context come from Core Signal; navigation presentation is by Olivaw.
       </p>
-    </details>
 
-    <details class="disclosure-card">
-      <summary>Source attribution and current facts</summary>
       <dl class="detail-list">
         <dt>Generated</dt>
         <dd>{{ dashboard.generated_display }}</dd>
@@ -290,10 +264,10 @@
           <dd>{{ item }}</dd>
         {% endfor %}
       </dl>
-    </details>
 
-    <details class="disclosure-card">
-      <summary>Core Signal events</summary>
+      <h3 class="briefing-subhead disclosure-subhead">Technical Details</h3>
+      <details class="inline-details nested-detail">
+        <summary>Raw events</summary>
       {% for event in dashboard.core_signal_events %}
         <section class="event-item detail-event">
           <h3>{{ event.summary }}</h3>
@@ -379,10 +353,10 @@
       {% else %}
         <p class="card-copy details-copy">{{ dashboard.core_signal_event_empty_message }}</p>
       {% endfor %}
-    </details>
+      </details>
 
-    <details class="disclosure-card">
-      <summary>Prime Observer evidence artifacts</summary>
+      <details class="inline-details nested-detail">
+        <summary>Artifact references</summary>
       {% for investigation in dashboard.prime_investigations %}
         <section class="event-item detail-event">
           <h3>{{ investigation.title }}</h3>
@@ -451,10 +425,10 @@
           <p class="source-footnote">Attribution: Prime Observer factual discovery.</p>
         </details>
       {% endif %}
-    </details>
+      </details>
 
-    <details class="disclosure-card">
-      <summary>Technical source notes</summary>
+      <details class="inline-details nested-detail">
+        <summary>Source metadata</summary>
       <dl class="detail-list">
         <dt>Config path</dt>
         <dd>{{ config.config_path or "defaults only" }}</dd>
@@ -469,11 +443,19 @@
           <dd>{{ item }}</dd>
         {% endfor %}
       </dl>
-    </details>
+      </details>
 
-    <details class="disclosure-card">
-      <summary>Show raw briefing</summary>
-      <pre>{{ briefing.text }}</pre>
+      <details class="inline-details nested-detail">
+        <summary>Raw briefing</summary>
+        <pre>{{ briefing.text }}</pre>
+      </details>
     </details>
   </section>
+  <script>
+    document.querySelectorAll("[data-evidence-package-trigger]").forEach((link) => {
+      link.addEventListener("click", () => {
+        document.getElementById("evidence-package")?.setAttribute("open", "");
+      });
+    });
+  </script>
 {% endblock %}
