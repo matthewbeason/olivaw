@@ -138,7 +138,162 @@ def test_cli_health_review_outputs_diagnostic(monkeypatch, capsys):
     assert "Status: available" in captured.out
     assert "Provider: fake-local" in captured.out
     assert "Model: fake-model" in captured.out
+    assert "Accepted: yes" in captured.out
+    assert "Rejected: no" in captured.out
     assert "Generated review." in captured.out
+
+
+def test_cli_health_review_accepts_transient_model_override(monkeypatch, capsys):
+    from olivaw.assistant.attribution import SOURCE_BACKED, AttributedResponse
+    from olivaw.briefing.health_review import HealthReviewResult
+
+    seen_models: list[str] = []
+
+    def fake_briefing(config=None):
+        return AttributedResponse(
+            text="# Source Briefing\n\n## Core Signal\n- Core Signal test: Stable.\n",
+            attribution=SOURCE_BACKED,
+            sources=("core_signal",),
+            capability="source-backed briefing",
+        )
+
+    def fake_generate(dashboard, *, config):
+        seen_models.append(config.local.model)
+        return HealthReviewResult(
+            text="Generated review.",
+            status="available",
+            provider="fake-local",
+            model=config.local.model,
+            latency_ms=12,
+        )
+
+    monkeypatch.setattr("olivaw.cli.compose_source_briefing", fake_briefing)
+    monkeypatch.setattr("olivaw.cli.generate_health_review", fake_generate)
+
+    exit_code = main(["health-review", "--model", "llama3.1:8b"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert seen_models == ["llama3.1:8b"]
+    assert "Model: llama3.1:8b" in captured.out
+
+
+def test_cli_health_review_model_override_does_not_persist_config(
+    monkeypatch,
+    tmp_path,
+):
+    from olivaw.assistant.attribution import SOURCE_BACKED, AttributedResponse
+    from olivaw.briefing.health_review import HealthReviewResult
+
+    config_path = tmp_path / "olivaw.toml"
+    config_text = "\n".join(
+        [
+            "[providers.local]",
+            'type = "ollama"',
+            'base_url = "http://localhost:11434"',
+            'model = "llama3.2:3b"',
+            "",
+        ]
+    )
+    config_path.write_text(config_text, encoding="utf-8")
+    monkeypatch.setenv("OLIVAW_CONFIG", str(config_path))
+
+    def fake_briefing(config=None):
+        return AttributedResponse(
+            text="# Source Briefing\n\n## Core Signal\n- Core Signal test: Stable.\n",
+            attribution=SOURCE_BACKED,
+            sources=("core_signal",),
+            capability="source-backed briefing",
+        )
+
+    def fake_generate(dashboard, *, config):
+        return HealthReviewResult(
+            text="Generated review.",
+            status="available",
+            provider="fake-local",
+            model=config.local.model,
+            latency_ms=12,
+        )
+
+    monkeypatch.setattr("olivaw.cli.compose_source_briefing", fake_briefing)
+    monkeypatch.setattr("olivaw.cli.generate_health_review", fake_generate)
+
+    assert main(["health-review", "--model", "llama3.1:8b"]) == 0
+
+    assert config_path.read_text(encoding="utf-8") == config_text
+
+
+def test_cli_health_review_attempts_repeat_diagnostic(monkeypatch, capsys):
+    from olivaw.assistant.attribution import SOURCE_BACKED, AttributedResponse
+    from olivaw.briefing.health_review import HealthReviewResult
+
+    calls = 0
+
+    def fake_briefing(config=None):
+        return AttributedResponse(
+            text="# Source Briefing\n\n## Core Signal\n- Core Signal test: Stable.\n",
+            attribution=SOURCE_BACKED,
+            sources=("core_signal",),
+            capability="source-backed briefing",
+        )
+
+    def fake_generate(dashboard, *, config):
+        nonlocal calls
+        calls += 1
+        return HealthReviewResult(
+            text=f"Generated review {calls}.",
+            status="available",
+            provider="fake-local",
+            model=config.local.model,
+            latency_ms=12,
+        )
+
+    monkeypatch.setattr("olivaw.cli.compose_source_briefing", fake_briefing)
+    monkeypatch.setattr("olivaw.cli.generate_health_review", fake_generate)
+
+    exit_code = main(["health-review", "--attempts", "2"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert calls == 2
+    assert "Attempt: 1/2" in captured.out
+    assert "Attempt: 2/2" in captured.out
+
+
+def test_cli_health_review_diagnostic_reports_guardrail_rejection(monkeypatch, capsys):
+    from olivaw.assistant.attribution import SOURCE_BACKED, AttributedResponse
+    from olivaw.briefing.health_review import HealthReviewResult
+
+    def fake_briefing(config=None):
+        return AttributedResponse(
+            text="# Source Briefing\n\n## Core Signal\n- Core Signal test: Stable.\n",
+            attribution=SOURCE_BACKED,
+            sources=("core_signal",),
+            capability="source-backed briefing",
+        )
+
+    def fake_generate(dashboard, *, config):
+        return HealthReviewResult(
+            text="Health review unavailable: generated response was rejected by guardrails.",
+            status="guardrail_rejected",
+            reason="generated response was rejected by guardrails.",
+            provider="fake-local",
+            model=config.local.model,
+            latency_ms=12,
+            guardrail_rejected=True,
+        )
+
+    monkeypatch.setattr("olivaw.cli.compose_source_briefing", fake_briefing)
+    monkeypatch.setattr("olivaw.cli.generate_health_review", fake_generate)
+
+    exit_code = main(["health-review", "--model", "llama3.1:8b"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Status: guardrail_rejected" in captured.out
+    assert "Accepted: no" in captured.out
+    assert "Rejected: yes" in captured.out
+    assert "Reason: generated response was rejected by guardrails." in captured.out
 
 
 def test_cli_brief_sources_outputs_source_backed_briefing(monkeypatch, tmp_path, capsys):

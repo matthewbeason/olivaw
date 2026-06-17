@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,9 +23,19 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("health", help="Report provider and configuration health.")
-    subparsers.add_parser(
+    health_review = subparsers.add_parser(
         "health-review",
         help="Run a Health Review generation diagnostic.",
+    )
+    health_review.add_argument(
+        "--model",
+        help="Temporarily override the local model for this diagnostic run.",
+    )
+    health_review.add_argument(
+        "--attempts",
+        type=int,
+        default=1,
+        help="Number of diagnostic attempts to run.",
     )
 
     brief = subparsers.add_parser("brief", help="Generate a deterministic briefing.")
@@ -72,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "health-review":
             config = load_config()
+            if args.model:
+                config = replace(
+                    config,
+                    local=replace(config.local, model=args.model),
+                )
+            attempts = max(1, args.attempts)
             briefing = compose_source_briefing(config=config)
             from olivaw.web import _briefing_dashboard
 
@@ -82,11 +99,16 @@ def main(argv: list[str] | None = None) -> int:
                 prime_observer_directory=config.prime_observer.directory,
                 prime_observer_base_url=config.prime_observer.base_url,
             )
-            print(
-                format_health_review_diagnostic(
-                    generate_health_review(dashboard, config=config)
+            for attempt in range(1, attempts + 1):
+                if attempts > 1:
+                    print(f"Attempt: {attempt}/{attempts}")
+                print(
+                    format_health_review_diagnostic(
+                        generate_health_review(dashboard, config=config)
+                    )
                 )
-            )
+                if attempt != attempts:
+                    print()
             return 0
 
         if args.command == "brief":

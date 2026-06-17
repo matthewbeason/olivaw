@@ -186,15 +186,20 @@ def generate_health_review(
 
 HEALTH_REVIEW_SYSTEM_PROMPT = "\n".join(
     [
-        "You are summarizing source-provided evidence and interpretation for Olivaw.",
-        "Olivaw is a presentation layer downstream of Prime Observer and Core Signal.",
-        "Prime Observer owns factual evidence, telemetry, investigations, DNS analytics, and target-group observations.",
-        "Core Signal owns interpretation, attribution assessment, confidence, uncertainty, evidence strength, and recommendations.",
+        "You are speaking directly to the operator as an experienced assistant.",
+        "Lead with the answer: current state first, then recent history, uncertainty, and why the operator should care.",
+        "Use conversational, voice-friendly language that can be spoken aloud naturally.",
+        "Start with the current state; do not use a preamble.",
+        "Say this matters because rather than you should care because.",
+        "Do not say the operator needs to care; explain why it matters.",
+        "Do not use we, our, or my; the assistant explains findings but does not own them.",
+        "If there is no current condition needing attention, say that plainly instead of saying sources report it.",
+        "Avoid source bookkeeping, internal architecture, raw metadata narration, counts, bullets, headings, and markdown.",
+        "Do not mention source system names unless attribution is required for clarity.",
+        "Do not discuss confidence or evidence strength directly; use those fields only to choose careful wording.",
         "You must not generate new findings, events, recommendations, confidence values, attribution, or causes.",
-        "Only explain the supplied findings using concise operator-facing prose.",
-        "Do not tell the operator what to do.",
-        "If you mention a recommendation, attribute it to Core Signal.",
-        "Return 3 to 6 sentences. Do not use bullets, headings, or markdown.",
+        "Only restate recommendations that are explicitly supplied.",
+        "Return 2 to 4 concise sentences.",
     ]
 )
 
@@ -259,27 +264,60 @@ def build_health_review_prompt(digest: dict[str, object]) -> str:
             "Create a concise Health Review from only the structured fields below.",
             "",
             "Rules:",
+            "- Speak to the operator directly.",
+            "- Lead with the current state.",
+            "- Do not start with a preamble such as here is a review or I want to bring you up to speed.",
+            "- Use 2 to 4 sentences, with a hard maximum of 4 sentences.",
+            "- Prefer natural wording that can be spoken aloud.",
+            "- Answer what is happening now, what happened recently, what remains uncertain, and whether the operator needs to care.",
+            "- Prefer this matters because over you should care because.",
+            "- Do not say the operator needs to care; explain why it matters.",
+            "- Do not use we, our, or my.",
+            "- Do not narrate field labels; say healthy now instead of labeled as Healthy now.",
             "- Summarize, explain, restate, compare, and provide context only from these fields.",
             "- Do not create new events, findings, confidence values, recommendations, attribution, or causes.",
-            "- Do not tell the operator what to do.",
-            "- Do not use advisory wording such as should, must, need to, essential, warrants, or warranting.",
-            "- Attribute any recommendation language to Core Signal.",
+            "- Only restate recommendation language that is explicitly present in the fields.",
+            "- Avoid source bookkeeping language such as Prime Observer reports, Core Signal reports, or investigation counts show.",
+            "- Do not describe internal architecture or repeat raw metadata labels.",
+            "- Do not discuss confidence or evidence strength directly; use them only to tune wording.",
             "- If a value is absent, do not fill it in.",
-            "- Return 3 to 6 sentences of operator-facing prose.",
+            "",
+            "Good example:",
+            "Things look healthy right now. There were two slowdown periods earlier, but they appear to have cleared. It is not yet clear whether this was provider congestion or transient routing instability. You probably do not need to care unless users noticed symptoms during that window.",
+            "",
+            "Bad example:",
+            "Prime Observer reports mixed evidence with moderate evidence strength. Investigation counts show sustained degradation, so the operator should investigate the root cause.",
             "",
             "Structured fields:",
-            _format_digest(digest),
+            _format_operator_digest(digest),
         ]
     )
 
 
+def _format_operator_digest(digest: dict[str, object]) -> str:
+    neutral_digest = {
+        "current_state": digest.get("current_system_status"),
+        "observed_facts": {
+            key: value
+            for key, value in _dict_value(digest.get("prime_observer")).items()
+            if key not in {"investigation_counts", "dns_summary"}
+        },
+        "interpreted_findings": digest.get("core_signal"),
+    }
+    return _format_digest(neutral_digest)
+
+
 def format_health_review_diagnostic(result: HealthReviewResult) -> str:
+    accepted = "yes" if result.available else "no"
+    rejected = "yes" if result.guardrail_rejected else "no"
     lines = [
         "Olivaw Health Review",
         "",
         f"Status: {result.status}",
         f"Provider: {result.provider or 'not selected'}",
         f"Model: {result.model or 'not configured'}",
+        f"Accepted: {accepted}",
+        f"Rejected: {rejected}",
         f"Reason: {result.reason or 'ok'}",
     ]
     if result.latency_ms is not None:
@@ -373,12 +411,56 @@ def _review_is_safe(text: str, digest: dict[str, object]) -> bool:
     if not text:
         return False
     sentence_count = len(_sentences(text))
-    if sentence_count < 1 or sentence_count > 8:
+    if sentence_count < 1 or sentence_count > 4:
         return False
 
     lowered = text.lower()
     forbidden_phrases = (
         "i believe",
+        "i'd like",
+        "i would like",
+        "bring you up to speed",
+        "current health review",
+        "we observed",
+        "we detected",
+        "our recommendation",
+        "our current",
+        "you should care",
+        "operator should care",
+        "should care because",
+        "operator needs to care",
+        "needs to care because",
+        "matter matters",
+        "this matter matters",
+        "could have resulted",
+        "could lead to",
+        "may have caused",
+        "causing possible",
+        "be prepared to take action",
+        "likely due to",
+        "likely related",
+        "significantly impact",
+        "significant impact on user experience",
+        "can have a significant impact",
+        "require intervention",
+        "requires intervention",
+        "underlying network problem",
+        "underlying network problems",
+        "if not addressed promptly",
+        "decreased productivity",
+        "will be repeated",
+        "root cause",
+        "further investigation",
+        "investigate further",
+        "should investigate",
+        "probably should investigate",
+        "recommended that you investigate",
+        "investigation should",
+        "should be performed",
+        "need for investigation",
+        "can lead to user impact",
+        "user impact is unlikely",
+        "in order",
         "definitely",
         "was responsible",
         "is responsible",
@@ -391,6 +473,12 @@ def _review_is_safe(text: str, digest: dict[str, object]) -> bool:
     )
     if any(phrase in lowered for phrase in forbidden_phrases):
         return False
+    if re.search(r"\bhere(?:\s+is|'s)\b", lowered):
+        return False
+    if _uses_source_bookkeeping(lowered):
+        return False
+    if _narrates_raw_metadata(lowered):
+        return False
 
     digest_text = _format_digest(digest).lower()
     if _mentions_unsupplied_confidence(lowered, digest_text):
@@ -399,7 +487,9 @@ def _review_is_safe(text: str, digest: dict[str, object]) -> bool:
         return False
     if _mentions_unsupplied_attribution(lowered, digest_text):
         return False
-    if _mentions_unattributed_advice(text):
+    if _mentions_unattributed_advice(text, digest_text):
+        return False
+    if _contradicts_supplied_slowdown(lowered, digest_text):
         return False
     return True
 
@@ -414,6 +504,12 @@ def _mentions_unsupplied_confidence(text: str, digest_text: str) -> bool:
 
 
 def _mentions_unsupplied_recommendation(text: str, digest_text: str) -> bool:
+    recommendation_text = (
+        text.replace("do not need to care", "")
+        .replace("probably do not need to care", "")
+        .replace("does not need to care", "")
+        .replace("doesn't need to care", "")
+    )
     recommendation_terms = (
         "should",
         "must",
@@ -422,11 +518,63 @@ def _mentions_unsupplied_recommendation(text: str, digest_text: str) -> bool:
         "warrant",
         "warrants",
         "warranting",
-        "essential",
     )
-    if not any(term in text for term in recommendation_terms):
+    if not any(term in recommendation_text for term in recommendation_terms):
         return False
-    return "recommendation" not in digest_text and "recommended" not in digest_text
+    return not _digest_has_supported_recommendation(digest_text)
+
+
+def _uses_source_bookkeeping(text: str) -> bool:
+    source_bookkeeping_terms = (
+        "prime observer",
+        "core signal",
+        "investigation count",
+        "investigation counts",
+        "reports that",
+        "reported that",
+        "reports no",
+        "reported no",
+        "reported by sources",
+        "sources not reporting",
+        "sources do not report",
+        "sources reported",
+        "source not reporting",
+        "source does not report",
+        "detected by",
+    )
+    return any(term in text for term in source_bookkeeping_terms)
+
+
+def _narrates_raw_metadata(text: str) -> bool:
+    raw_metadata_terms = (
+        "confidence is",
+        "confidence level",
+        "medium confidence",
+        "low confidence",
+        "high confidence",
+        "evidence strength",
+        "attribution assessment",
+        "recommendation trace",
+        "current_state",
+        "observed_facts",
+        "interpreted_findings",
+        "observed facts",
+        "interpreted findings",
+        "noticeability mentions",
+        "mentions that",
+        "labeled as",
+        "prevent user impact",
+        "prevent potential user impact",
+        "metadata",
+        "essential",
+        "warrant investigation",
+        "warrants investigation",
+        "warranting investigation",
+        "current lan/wan state",
+        "lan/wan state:",
+        "current state:",
+    )
+    return any(term in text for term in raw_metadata_terms)
 
 
 def _mentions_unsupplied_attribution(text: str, digest_text: str) -> bool:
@@ -437,7 +585,7 @@ def _mentions_unsupplied_attribution(text: str, digest_text: str) -> bool:
     return False
 
 
-def _mentions_unattributed_advice(text: str) -> bool:
+def _mentions_unattributed_advice(text: str, digest_text: str) -> bool:
     advice_terms = (
         "should",
         "must",
@@ -449,11 +597,45 @@ def _mentions_unattributed_advice(text: str) -> bool:
     )
     for sentence in _sentences(text):
         lowered = sentence.lower()
+        if (
+            "do not need to care" in lowered
+            or "probably do not need to care" in lowered
+            or "does not need to care" in lowered
+            or "doesn't need to care" in lowered
+        ):
+            continue
         if not any(term in lowered for term in advice_terms):
             continue
-        if "core signal" not in lowered:
+        if not _digest_has_supported_recommendation(digest_text):
             return True
     return False
+
+
+def _digest_has_supported_recommendation(digest_text: str) -> bool:
+    if (
+        "recommendation" not in digest_text
+        and "recommended" not in digest_text
+        and "recommend" not in digest_text
+    ):
+        return False
+    unsupported_markers = (
+        "no specific recommendation is available",
+        "no recommendation",
+        "not recommended",
+    )
+    return not any(marker in digest_text for marker in unsupported_markers)
+
+
+def _contradicts_supplied_slowdown(text: str, digest_text: str) -> bool:
+    if "sustained slowdown" not in digest_text:
+        return False
+    contradiction_terms = (
+        "no sustained slowdown has been reported",
+        "no sustained slowdowns have been reported",
+        "no sustained slowdown was reported",
+        "no sustained slowdowns were reported",
+    )
+    return any(term in text for term in contradiction_terms)
 
 
 def _retry_guardrail_rewrite(
@@ -465,13 +647,13 @@ def _retry_guardrail_rewrite(
             [
                 "Create a Health Review again with stricter boundaries.",
                 "Use only the structured fields below.",
-                "Return 3 to 5 sentences.",
-                "Do not tell the operator what to do.",
-                "Do not use advisory wording such as should, must, need to, essential, warrants, or warranting.",
-                "If source data includes a recommendation, phrase it only as Core Signal metadata.",
+                "Return 2 to 4 concise sentences.",
+                "Speak directly to the operator and lead with the current state.",
+                "Do not mention source system names, internal architecture, confidence, evidence strength, or investigation counts.",
+                "Only restate recommendations that are explicitly supplied.",
                 "",
                 "Structured fields:",
-                _format_digest(digest),
+                _format_operator_digest(digest),
             ]
         ),
         system_prompt=HEALTH_REVIEW_SYSTEM_PROMPT,
