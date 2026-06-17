@@ -10,12 +10,13 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from olivaw.briefing import compose_briefing, compose_source_briefing
-from olivaw.briefing.health_review import generate_health_review
+from olivaw.briefing.health_review import HealthReviewResult, generate_health_review
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.capabilities.sources import SourceInspectionCapability
-from olivaw.config import load_config, public_config
+from olivaw.config import OlivawConfig, load_config, public_config
 from olivaw.health import run_health_checks
+from olivaw.models import HealthReport
 from olivaw.assistant.identity import get_identity
 from olivaw.sources.registry import create_default_registry
 
@@ -30,11 +31,19 @@ app = FastAPI(title="Olivaw", version="0.7.0")
 def home(request: Request):
     config = load_config()
     health = run_health_checks(config)
-    briefing = _example_briefing()
+    briefing, dashboard, generated_at = _source_backed_dashboard(config)
+    overview = _overview_context(dashboard, health)
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"health": health, "briefing": briefing, "config": public_config(config)},
+        {
+            "briefing": briefing,
+            "dashboard": dashboard,
+            "overview": overview,
+            "generated_at": generated_at,
+            "health": health,
+            "config": public_config(config),
+        },
     )
 
 
@@ -43,7 +52,7 @@ def chat_page(request: Request):
     return templates.TemplateResponse(
         request,
         "chat.html",
-        {"response": None, "prompt": ""},
+        {"response": None, "prompt": request.query_params.get("prompt", "")},
     )
 
 
@@ -60,6 +69,26 @@ def chat_submit(request: Request, prompt: str = Form(...)):
 @app.get("/briefing", response_class=HTMLResponse)
 def briefing_page(request: Request):
     config = load_config()
+    briefing, dashboard, generated_at = _source_backed_dashboard(config)
+    overview = _overview_context(dashboard, run_health_checks(config))
+    response = templates.TemplateResponse(
+        request,
+        "briefing.html",
+        {
+            "briefing": briefing,
+            "dashboard": dashboard,
+            "overview": overview,
+            "generated_at": generated_at,
+            "config": public_config(config),
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _source_backed_dashboard(
+    config: OlivawConfig,
+) -> tuple[object, dict[str, object], str]:
     registry = create_default_registry(config)
     source_aggregate = registry.aggregate()
     briefing = compose_source_briefing(registry=registry)
@@ -79,18 +108,219 @@ def briefing_page(request: Request):
         config=config,
     )
     dashboard["generated_display"] = _human_generated_time(generated_dt)
-    response = templates.TemplateResponse(
-        request,
-        "briefing.html",
+    return briefing, dashboard, generated_at
+
+
+def _overview_context(dashboard: dict[str, object], health: HealthReport) -> dict[str, object]:
+    source_aggregate = dashboard.get("source_aggregate")
+    if not isinstance(source_aggregate, dict):
+        source_aggregate = {}
+    sources = _dict_list(source_aggregate.get("sources"))
+    health_review = dashboard.get("health_review")
+    if not isinstance(health_review, HealthReviewResult):
+        health_review = None
+
+    source_freshness = _source_freshness_items(sources, health_review, health)
+    return {
+        "context_cards": _overview_context_cards(dashboard, sources, health),
+        "recent_activity": _recent_activity_items(dashboard, sources, health_review),
+        "source_freshness": source_freshness,
+        "network_visualization": _network_visualization(dashboard),
+        "ask_prompts": [
+            "How was the network overnight?",
+            "Anything important today?",
+            "Show me the evidence package.",
+            "What changed recently?",
+        ],
+    }
+
+
+def _overview_context_cards(
+    dashboard: dict[str, object],
+    sources: list[dict[str, object]],
+    health: HealthReport,
+) -> list[dict[str, str]]:
+    network = _list_value(dashboard.get("network_status"))
+    core_events = _dict_list(dashboard.get("core_signal_events"))
+    cards = [
         {
-            "briefing": briefing,
-            "dashboard": dashboard,
-            "generated_at": generated_at,
-            "config": public_config(config),
+            "title": "Network",
+            "tone": str(dashboard.get("status_tone") or "healthy"),
+            "summary": str(network[0]) if network else str(dashboard.get("status_explanation") or ""),
+            "meta": f"{len(core_events)} interpreted event{'s' if len(core_events) != 1 else ''}",
         },
+        {
+            "title": "System / Sources",
+            "tone": _source_panel_tone(sources),
+            "summary": _source_panel_summary(sources),
+            "meta": f"{len(sources)} registered sources",
+        },
+        {
+            "title": "Calendar",
+            "tone": "muted",
+            "summary": "Calendar source is not configured in this wave.",
+            "meta": "placeholder",
+        },
+    ]
+    weather = dashboard.get("weather_context")
+    if isinstance(weather, dict) and weather.get("summary"):
+        cards.insert(
+            1,
+            {
+                "title": "Weather",
+                "tone": "weather",
+                "summary": str(weather.get("summary")),
+                "meta": str(weather.get("freshness") or weather.get("observed_at") or "available"),
+            },
+        )
+    cards.append(
+        {
+            "title": "Local Model",
+            "tone": str(health.local.state or "muted"),
+            "summary": health.local.message,
+            "meta": health.local.model or health.local.name,
+        }
     )
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    return cards
+
+
+def _source_freshness_items(
+    sources: list[dict[str, object]],
+    health_review: HealthReviewResult | None,
+    health: HealthReport,
+) -> list[dict[str, str]]:
+    items = []
+    for source in sources:
+        label = str(source.get("source_name") or source.get("source_id") or "Source")
+        status = str(source.get("status") or "unknown")
+        freshness = str(source.get("freshness") or source.get("message") or "")
+        items.append(
+            {
+                "label": label,
+                "status": status,
+                "detail": freshness or "no freshness timestamp",
+            }
+        )
+    if health_review is not None:
+        detail = health_review.reason or health_review.model or health_review.provider or ""
+        items.append(
+            {
+                "label": "Health Review",
+                "status": health_review.status,
+                "detail": detail or ("available" if health_review.available else "unavailable"),
+            }
+        )
+    items.append(
+        {
+            "label": "Ollama",
+            "status": health.local.state,
+            "detail": health.local.message,
+        }
+    )
+    return items
+
+
+def _recent_activity_items(
+    dashboard: dict[str, object],
+    sources: list[dict[str, object]],
+    health_review: HealthReviewResult | None,
+) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    if health_review is not None:
+        if health_review.available:
+            detail = health_review.model or health_review.provider or "available"
+            items.append({"label": "Health review generated", "detail": detail})
+        elif health_review.reason or health_review.status:
+            detail = health_review.reason or health_review.status
+            items.append({"label": "Health review unavailable", "detail": detail})
+
+    weather = dashboard.get("weather_context")
+    if isinstance(weather, dict) and weather.get("summary"):
+        detail = str(weather.get("observed_at") or weather.get("freshness") or weather["summary"])
+        items.append({"label": "Weather updated", "detail": detail})
+
+    network = _list_value(dashboard.get("network_status"))
+    if network:
+        items.append({"label": "Network status available", "detail": str(network[0])})
+
+    for source_id, label in (
+        ("prime_observer", "Prime Observer artifact updated"),
+        ("core_signal", "Core Signal event present"),
+    ):
+        source = _first_source(sources, source_id)
+        if not source:
+            continue
+        detail = str(
+            source.get("observed_at")
+            or source.get("generated_at")
+            or source.get("freshness")
+            or source.get("message")
+            or source.get("status")
+        )
+        if detail:
+            items.append({"label": label, "detail": detail})
+
+    return _dedupe_activity(items)[:5]
+
+
+def _network_visualization(dashboard: dict[str, object]) -> dict[str, object]:
+    network = [str(item) for item in _list_value(dashboard.get("network_status"))]
+    dns = [str(item) for item in _list_value(dashboard.get("dns_activity"))]
+    events = _dict_list(dashboard.get("core_signal_events"))
+    labels = network[:3] + dns[:2]
+    segments = []
+    tone = str(dashboard.get("status_tone") or "healthy")
+    for index in range(8):
+        segments.append({"tone": tone if index < max(1, len(labels)) else "muted"})
+    return {
+        "summary": labels[0] if labels else str(dashboard.get("status_explanation") or ""),
+        "metrics": labels[:4],
+        "event_count": len(events),
+        "segments": segments,
+    }
+
+
+def _source_panel_tone(sources: list[dict[str, object]]) -> str:
+    statuses = {str(source.get("status") or "") for source in sources}
+    if "error" in statuses:
+        return "action"
+    if statuses.intersection({"unavailable", "disabled"}):
+        return "watch"
+    return "healthy"
+
+
+def _source_panel_summary(sources: list[dict[str, object]]) -> str:
+    if not sources:
+        return "No registered source statuses are available."
+    ok_count = sum(1 for source in sources if source.get("status") == "ok")
+    unavailable = [source for source in sources if source.get("status") != "ok"]
+    if unavailable:
+        label = str(unavailable[0].get("source_name") or unavailable[0].get("source_id"))
+        status = str(unavailable[0].get("status") or "unavailable")
+        return f"{ok_count} sources fresh; {label} is {status}."
+    return f"All {ok_count} normalized sources are fresh."
+
+
+def _first_source(
+    sources: list[dict[str, object]],
+    source_id: str,
+) -> dict[str, object]:
+    for source in sources:
+        if source.get("source_id") == source_id:
+            return source
+    return {}
+
+
+def _dedupe_activity(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        key = (item["label"], item["detail"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 def _briefing_dashboard(

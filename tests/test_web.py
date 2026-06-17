@@ -22,7 +22,9 @@ WEATHER_PROMPT = "Hi could you tell me what the weather is in Phoenix az"
 
 
 @pytest.fixture(autouse=True)
-def mock_health_checks(monkeypatch):
+def mock_health_checks(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
     def fake_health(config=None):
         return HealthReport(
             local=ProviderStatus(
@@ -62,9 +64,37 @@ def test_home_route_renders():
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Assistant Home" in response.text
-    assert "Example Briefing" in response.text
-    assert "Briefing renders without repo fixtures" in response.text
+    assert "Operations Center" in response.text
+    assert "Overview" in response.text
+    assert "Ask Olivaw" in response.text
+    assert "Source Freshness" in response.text
+    assert "What Changed Recently" in response.text
+    assert "Network Signal" in response.text
+    assert "Open Evidence Package" in response.text
+    assert 'href="/chat?prompt=How%20was%20the%20network%20overnight%3F"' in (
+        response.text
+    )
+    assert "Health review unavailable: mocked web test." in response.text
+    assert "Event ID" not in response.text
+    assert "Raw briefing" not in response.text
+
+
+def test_home_navigation_simplifies_primary_routes():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert '<div class="nav-primary">' in response.text
+    assert '<a href="/">Overview</a>' in response.text
+    assert '<a href="/chat">Ask Olivaw</a>' in response.text
+    assert '<a href="/sources">Sources</a>' in response.text
+    assert '<a href="/settings">Settings</a>' in response.text
+    assert '<div class="nav-secondary" aria-label="Compatibility links">' in (
+        response.text
+    )
+    assert '<a href="/briefing">Briefing</a>' in response.text
+    assert '<a href="/health">Health</a>' in response.text
+    assert '<a href="/capabilities">Capabilities</a>' in response.text
+    assert '<a href="/config">Config</a>' in response.text
 
 
 def test_templates_do_not_hot_reload_in_long_running_web_process():
@@ -80,8 +110,8 @@ def test_home_route_renders_from_non_repo_cwd(monkeypatch, tmp_path):
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Assistant Home" in response.text
-    assert "Briefing renders without repo fixtures" in response.text
+    assert "Operations Center" in response.text
+    assert "Source Freshness" in response.text
 
 
 def test_health_route_renders():
@@ -455,6 +485,69 @@ def test_briefing_route_renders_compact_weather_context(monkeypatch, tmp_path):
     assert response.text.count('class="disclosure-card"') == 1
 
 
+def test_home_route_renders_weather_card_when_available(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "<h3>Weather</h3>" in response.text
+    assert "Currently 72°F and clear. High 86°F, low 68°F. Rain chance 10%." in (
+        response.text
+    )
+    assert "Weather updated" in response.text
+    assert "Weather</dt>" in response.text
+
+
 def test_briefing_route_omits_weather_when_unavailable(monkeypatch, tmp_path):
     for name in (
         "OLIVAW_CONFIG",
@@ -481,6 +574,35 @@ def test_briefing_route_omits_weather_when_unavailable(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert "Weather:" not in response.text
+    assert "Weather source requires latitude and longitude." in response.text
+
+
+def test_home_route_omits_weather_card_when_unavailable(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "<h3>Weather</h3>" not in response.text
     assert "Weather source requires latitude and longitude." in response.text
 
 
