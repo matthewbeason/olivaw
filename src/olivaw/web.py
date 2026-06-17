@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from olivaw.briefing import compose_briefing, compose_source_briefing
+from olivaw.briefing.health_review import generate_health_review
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.capabilities.sources import SourceInspectionCapability
@@ -67,6 +68,10 @@ def briefing_page(request: Request):
         briefing.sources,
         prime_observer_directory=config.prime_observer.directory,
         prime_observer_base_url=config.prime_observer.base_url,
+    )
+    dashboard["health_review"] = generate_health_review(
+        dashboard,
+        config=config,
     )
     dashboard["generated_display"] = _human_generated_time(generated_dt)
     response = templates.TemplateResponse(

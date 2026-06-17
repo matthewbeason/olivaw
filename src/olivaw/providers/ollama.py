@@ -13,8 +13,26 @@ from olivaw.models import CompletionRequest, CompletionResponse, ProviderStatus
 class OllamaProvider:
     config: LocalProviderConfig
     timeout: float = 1.0
+    complete_timeout: float = 30.0
 
     name: str = "ollama"
+
+    def models(self) -> tuple[str, ...]:
+        url = f"{self.config.base_url.rstrip('/')}/api/tags"
+        with urllib.request.urlopen(url, timeout=self.timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        models = data.get("models", [])
+        if not isinstance(models, list):
+            return ()
+        names: list[str] = []
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            for key in ("model", "name"):
+                value = str(model.get(key) or "").strip()
+                if value and value not in names:
+                    names.append(value)
+        return tuple(names)
 
     def health(self) -> ProviderStatus:
         url = f"{self.config.base_url.rstrip('/')}/api/tags"
@@ -67,11 +85,10 @@ class OllamaProvider:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(http_request, timeout=30) as response:
+        with urllib.request.urlopen(http_request, timeout=self.complete_timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
         return CompletionResponse(
             text=str(data.get("response", "")),
             provider=self.name,
             model=self.config.model,
         )
-

@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from olivaw.briefing import compose_briefing_from_file, compose_source_briefing
+from olivaw.briefing.health_review import (
+    format_health_review_diagnostic,
+    generate_health_review,
+)
 from olivaw.config import ConfigError, format_config_report, load_config
 from olivaw.health import format_health_report, run_health_checks
 
@@ -17,6 +22,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("health", help="Report provider and configuration health.")
+    subparsers.add_parser(
+        "health-review",
+        help="Run a Health Review generation diagnostic.",
+    )
 
     brief = subparsers.add_parser("brief", help="Generate a deterministic briefing.")
     brief.add_argument(
@@ -59,6 +68,25 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "health":
             print(format_health_report(run_health_checks()))
+            return 0
+
+        if args.command == "health-review":
+            config = load_config()
+            briefing = compose_source_briefing(config=config)
+            from olivaw.web import _briefing_dashboard
+
+            dashboard = _briefing_dashboard(
+                briefing.text,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                briefing.sources,
+                prime_observer_directory=config.prime_observer.directory,
+                prime_observer_base_url=config.prime_observer.base_url,
+            )
+            print(
+                format_health_review_diagnostic(
+                    generate_health_review(dashboard, config=config)
+                )
+            )
             return 0
 
         if args.command == "brief":

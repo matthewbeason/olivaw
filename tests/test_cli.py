@@ -24,6 +24,7 @@ def clear_config_env(monkeypatch):
         "OLIVAW_PRIME_OBSERVER_ENABLED",
         "OLIVAW_CORE_SIGNAL_DIR",
         "OLIVAW_CORE_SIGNAL_ENABLED",
+        "OLIVAW_HEALTH_REVIEW_ENABLED",
         "OPENAI_API_KEY",
         "OLIVAW_OPENAI_API_KEY",
     ):
@@ -103,6 +104,41 @@ def test_cli_sources_outputs_registered_sources(capsys):
     assert "Local files (files):" in captured.out
     assert "Prime Observer (prime_observer):" in captured.out
     assert "Core Signal (core_signal):" in captured.out
+
+
+def test_cli_health_review_outputs_diagnostic(monkeypatch, capsys):
+    from olivaw.assistant.attribution import SOURCE_BACKED, AttributedResponse
+    from olivaw.briefing.health_review import HealthReviewResult
+
+    def fake_briefing(config=None):
+        return AttributedResponse(
+            text="# Source Briefing\n\n## Core Signal\n- Core Signal test: Stable.\n",
+            attribution=SOURCE_BACKED,
+            sources=("core_signal",),
+            capability="source-backed briefing",
+        )
+
+    def fake_generate(dashboard, *, config):
+        return HealthReviewResult(
+            text="Generated review.",
+            status="available",
+            provider="fake-local",
+            model="fake-model",
+            latency_ms=12,
+        )
+
+    monkeypatch.setattr("olivaw.cli.compose_source_briefing", fake_briefing)
+    monkeypatch.setattr("olivaw.cli.generate_health_review", fake_generate)
+
+    exit_code = main(["health-review"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Olivaw Health Review" in captured.out
+    assert "Status: available" in captured.out
+    assert "Provider: fake-local" in captured.out
+    assert "Model: fake-model" in captured.out
+    assert "Generated review." in captured.out
 
 
 def test_cli_brief_sources_outputs_source_backed_briefing(monkeypatch, tmp_path, capsys):
