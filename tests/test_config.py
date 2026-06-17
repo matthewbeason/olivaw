@@ -26,6 +26,11 @@ def clear_config_env(monkeypatch):
         "OLIVAW_PRIME_OBSERVER_BASE_URL",
         "OLIVAW_CORE_SIGNAL_DIR",
         "OLIVAW_CORE_SIGNAL_ENABLED",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+        "OLIVAW_WEATHER_UNITS",
         "OPENAI_API_KEY",
         "OLIVAW_OPENAI_API_KEY",
     ):
@@ -97,6 +102,7 @@ openai_api_key = "config-secret"
     assert config.prime_observer.base_url == "http://127.0.0.1:8766"
     assert config.core_signal.directory == tmp_path / "core-signal" / "reports"
     assert config.core_signal.enabled is True
+    assert config.weather.enabled is False
 
 
 def test_environment_overrides_user_config_values_and_secrets(monkeypatch, tmp_path):
@@ -194,6 +200,13 @@ base_url = "http://127.0.0.1:8766"
 directory = "~/core-signal/custom"
 enabled = true
 
+[sources.weather]
+enabled = true
+latitude = 33.4484
+longitude = -112.0740
+location_name = "Phoenix"
+units = "fahrenheit"
+
 [secrets]
 openai_api_key = "config-secret"
 """,
@@ -230,7 +243,48 @@ openai_api_key = "config-secret"
     assert config.prime_observer.base_url == "http://127.0.0.1:8766"
     assert config.core_signal.directory == tmp_path / "core-signal" / "custom"
     assert config.core_signal.enabled is True
+    assert config.weather.enabled is True
+    assert config.weather.latitude == 33.4484
+    assert config.weather.longitude == -112.074
+    assert config.weather.location_name == "Phoenix"
+    assert config.weather.units == "fahrenheit"
     assert config.cloud.api_key == "config-secret"
+
+
+def test_weather_environment_overrides_user_config(monkeypatch, tmp_path):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = default_user_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[sources.weather]
+enabled = false
+latitude = 1.0
+longitude = 2.0
+location_name = "Old"
+units = "celsius"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.0740")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setenv("OLIVAW_WEATHER_UNITS", "fahrenheit")
+
+    config = load_config()
+    public = public_config(config)
+    report = format_config_report(config)
+
+    assert config.weather.enabled is True
+    assert config.weather.latitude == 33.4484
+    assert config.weather.longitude == -112.074
+    assert config.weather.location_name == "Phoenix"
+    assert config.weather.units == "fahrenheit"
+    assert public["sources"]["weather"]["location_name"] == "Phoenix"
+    assert "Weather enabled: yes" in report
+    assert "Weather location: Phoenix" in report
 
 
 def test_explicit_false_environment_overrides_user_config(monkeypatch, tmp_path):

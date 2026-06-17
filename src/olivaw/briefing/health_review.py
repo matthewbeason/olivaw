@@ -196,6 +196,8 @@ HEALTH_REVIEW_SYSTEM_PROMPT = "\n".join(
         "If there is no current condition needing attention, say that plainly instead of saying sources report it.",
         "Avoid source bookkeeping, internal architecture, raw metadata narration, counts, bullets, headings, and markdown.",
         "Do not mention source system names unless attribution is required for clarity.",
+        "Weather is optional external context, not a recommendation or alert source.",
+        "Do not invent weather alerts or safety recommendations.",
         "Do not discuss confidence or evidence strength directly; use those fields only to choose careful wording.",
         "You must not generate new findings, events, recommendations, confidence values, attribution, or causes.",
         "Only restate recommendations that are explicitly supplied.",
@@ -205,6 +207,7 @@ HEALTH_REVIEW_SYSTEM_PROMPT = "\n".join(
 
 
 def build_health_review_digest(dashboard: dict[str, object]) -> dict[str, object]:
+    aggregate_context = _aggregate_health_review_context(dashboard)
     explanation = _dict_value(dashboard.get("core_signal_explanation"))
     events = _dict_list(dashboard.get("core_signal_events"))
     first_event = events[0] if events else {}
@@ -219,7 +222,7 @@ def build_health_review_digest(dashboard: dict[str, object]) -> dict[str, object
         first_event.get("evidence_strength"),
     )
 
-    return {
+    digest = {
         "current_system_status": {
             "label": str(dashboard.get("current_status_label") or "").strip(),
             "explanation": str(dashboard.get("status_explanation") or "").strip(),
@@ -256,6 +259,9 @@ def build_health_review_digest(dashboard: dict[str, object]) -> dict[str, object
             ),
         },
     }
+    if aggregate_context:
+        digest["aggregated_sources"] = aggregate_context
+    return digest
 
 
 def build_health_review_prompt(digest: dict[str, object]) -> str:
@@ -277,6 +283,7 @@ def build_health_review_prompt(digest: dict[str, object]) -> str:
             "- Summarize, explain, restate, compare, and provide context only from these fields.",
             "- Do not create new events, findings, confidence values, recommendations, attribution, or causes.",
             "- Only restate recommendation language that is explicitly present in the fields.",
+            "- Weather facts are external context only; do not invent weather alerts or safety recommendations.",
             "- Avoid source bookkeeping language such as Prime Observer reports, Core Signal reports, or investigation counts show.",
             "- Do not describe internal architecture or repeat raw metadata labels.",
             "- Do not discuss confidence or evidence strength directly; use them only to tune wording.",
@@ -295,6 +302,7 @@ def build_health_review_prompt(digest: dict[str, object]) -> str:
 
 
 def _format_operator_digest(digest: dict[str, object]) -> str:
+    aggregate = _dict_value(digest.get("aggregated_sources"))
     neutral_digest = {
         "current_state": digest.get("current_system_status"),
         "observed_facts": {
@@ -304,6 +312,8 @@ def _format_operator_digest(digest: dict[str, object]) -> str:
         },
         "interpreted_findings": digest.get("core_signal"),
     }
+    if aggregate:
+        neutral_digest["aggregated_context"] = aggregate
     return _format_digest(neutral_digest)
 
 
@@ -358,6 +368,7 @@ def _health_review_enabled() -> bool:
 def _digest_has_source_data(digest: dict[str, object]) -> bool:
     prime = _dict_value(digest.get("prime_observer"))
     core = _dict_value(digest.get("core_signal"))
+    aggregate = _dict_value(digest.get("aggregated_sources"))
     source_values: list[object] = [
         prime.get("current_attribution"),
         prime.get("target_group_summaries"),
@@ -372,6 +383,9 @@ def _digest_has_source_data(digest: dict[str, object]) -> bool:
         core.get("attribution_assessment"),
         core.get("evidence_strength"),
         core.get("recommendation_trace"),
+        aggregate.get("facts"),
+        aggregate.get("interpretation_items"),
+        aggregate.get("actions"),
     ]
     return any(_meaningful_source_value(value) for value in source_values)
 
@@ -746,6 +760,56 @@ def _strings(value: object, *, limit: int) -> list[str]:
         text = str(item).strip()
         if text and text not in result:
             result.append(text)
+    return result[:limit]
+
+
+def _aggregate_health_review_context(
+    dashboard: dict[str, object],
+) -> dict[str, object]:
+    aggregate = _dict_value(dashboard.get("source_aggregate"))
+    context = _dict_value(aggregate.get("health_review_context"))
+    if not context:
+        return {}
+
+    facts = _aggregate_summaries(context.get("facts"), limit=6)
+    interpretations = _aggregate_summaries(
+        context.get("interpretation_items"),
+        limit=5,
+    )
+    actions = _aggregate_summaries(context.get("actions"), limit=4)
+    references = _aggregate_reference_summaries(context.get("references"), limit=4)
+    result = {
+        "facts": facts,
+        "interpretation_items": interpretations,
+        "actions": actions,
+        "references": references,
+    }
+    return {
+        key: value
+        for key, value in result.items()
+        if _meaningful_source_value(value)
+    }
+
+
+def _aggregate_summaries(value: object, *, limit: int) -> list[str]:
+    result: list[str] = []
+    for item in _dict_list(value):
+        summary = _first_text(item.get("summary"), item.get("title"))
+        if summary and summary not in result:
+            result.append(summary)
+    return result[:limit]
+
+
+def _aggregate_reference_summaries(value: object, *, limit: int) -> list[str]:
+    result: list[str] = []
+    for item in _dict_list(value):
+        label = _first_text(item.get("label"), "Reference")
+        target = _first_text(item.get("target"))
+        if not target:
+            continue
+        summary = f"{label}: {target}"
+        if summary not in result:
+            result.append(summary)
     return result[:limit]
 
 

@@ -20,6 +20,11 @@
       </span>
       <h2>Current Status</h2>
       <p>{{ dashboard.status_explanation }}</p>
+      {% if dashboard.weather_context %}
+        <p class="source-footnote today-context">
+          Weather: {{ dashboard.weather_context.summary }}
+        </p>
+      {% endif %}
     </div>
     <div class="assessment-action">
       <p class="card-label">Historical Finding</p>

@@ -13,8 +13,68 @@ from olivaw.config import (
     OlivawConfig,
     PrimeObserverSourceConfig,
 )
-from olivaw.sources import FileSource, ManualSource, SourceRegistry, create_default_registry
+from olivaw.sources import (
+    FileSource,
+    ManualSource,
+    SourceRegistry,
+    WeatherSource,
+    create_default_registry,
+)
+from olivaw.sources.base import SourceHealth
 from olivaw.sources.registry import inspect_sources
+
+
+class BrokenSource:
+    source_id = "broken"
+    display_name = "Broken source"
+
+    def health(self):
+        return SourceHealth(
+            source_id=self.source_id,
+            display_name=self.display_name,
+            status="ok",
+            message="Broken source appears available.",
+        )
+
+    def fetch(self):
+        raise RuntimeError("boom")
+
+
+class FakeWeatherProvider:
+    def __init__(self, payload: dict[str, object] | None = None, exc: Exception | None = None):
+        self.payload = payload or _weather_payload()
+        self.exc = exc
+
+    def fetch_forecast(self, *, latitude: float, longitude: float, units: str):
+        if self.exc:
+            raise self.exc
+        return self.payload
+
+
+def _weather_payload() -> dict[str, object]:
+    return {
+        "current": {
+            "time": "2026-06-17T08:00",
+            "temperature_2m": 72,
+            "weather_code": 0,
+            "wind_speed_10m": 6,
+        },
+        "current_units": {
+            "temperature_2m": "°F",
+            "wind_speed_10m": "mph",
+        },
+        "daily": {
+            "time": ["2026-06-17"],
+            "temperature_2m_max": [86],
+            "temperature_2m_min": [68],
+            "precipitation_probability_max": [10],
+            "weather_code": [0],
+        },
+        "daily_units": {
+            "temperature_2m_max": "°F",
+            "temperature_2m_min": "°F",
+        },
+    }
 
 
 def test_manual_source_health_is_ok():
@@ -73,6 +133,7 @@ def test_default_registry_contains_manual_and_file_sources(tmp_path):
     assert registry.get_source("files") is not None
     assert registry.get_source("prime_observer") is not None
     assert registry.get_source("core_signal") is not None
+    assert registry.get_source("weather") is not None
 
 
 def test_inspect_sources_returns_status_and_sample_data(tmp_path):
@@ -86,8 +147,82 @@ def test_inspect_sources_returns_status_and_sample_data(tmp_path):
     assert report["sources"][1]["source_id"] == "files"
     assert report["sources"][1]["status"] == "ok"
     assert report["sources"][3]["source_id"] == "core_signal"
+    assert report["sources"][4]["source_id"] == "weather"
     assert report["data"][0]["items"][0]["title"] == "Example item"
     assert report["data"][1]["count"] == 3
+    assert "aggregate" in report
+    assert report["aggregate"]["sources"][0]["source_id"] == "manual"
+
+
+def test_weather_source_disabled_returns_clear_diagnostics():
+    source = WeatherSource(enabled=False)
+
+    health = source.health()
+    payload = source.fetch()
+
+    assert health.status == "unavailable"
+    assert "disabled" in health.message
+    assert payload["status"] == "unavailable"
+    assert payload["diagnostics"]["enabled"] == "no"
+    assert payload["diagnostics"]["provider_status"] == "not called"
+
+
+def test_weather_source_missing_location_returns_clear_diagnostics():
+    source = WeatherSource(enabled=True)
+
+    health = source.health()
+    payload = source.fetch()
+
+    assert health.status == "unavailable"
+    assert "latitude and longitude" in health.message
+    assert payload["diagnostics"]["configured"] == "no"
+
+
+def test_weather_source_successful_fetch_normalizes_daily_facts():
+    source = WeatherSource(
+        enabled=True,
+        latitude=33.4484,
+        longitude=-112.074,
+        location_name="Phoenix",
+        provider=FakeWeatherProvider(),
+    )
+
+    health = source.health()
+    payload = source.fetch()
+
+    assert health.status == "ok"
+    assert payload["status"] == "ok"
+    assert payload["count"] == 1
+    item = payload["items"][0]
+    assert item["title"] == "Phoenix"
+    assert item["summary"] == "Currently 72°F and clear. High 86°F, low 68°F. Rain chance 10%."
+    assert item["forecast_date"] == "2026-06-17"
+    assert item["facts"] == [
+        {"kind": "current_temperature", "summary": "Current temperature: 72°F"},
+        {"kind": "condition", "summary": "Condition: clear"},
+        {"kind": "high_temperature", "summary": "High temperature: 86°F"},
+        {"kind": "low_temperature", "summary": "Low temperature: 68°F"},
+        {"kind": "precipitation_chance", "summary": "Rain chance: 10%"},
+        {"kind": "wind", "summary": "Wind: 6 mph"},
+    ]
+    assert payload["diagnostics"]["provider"] == "Open-Meteo"
+    assert payload["diagnostics"]["provider_status"] == "ok"
+
+
+def test_weather_source_api_failure_returns_degraded_payload():
+    source = WeatherSource(
+        enabled=True,
+        latitude=33.4484,
+        longitude=-112.074,
+        provider=FakeWeatherProvider(exc=RuntimeError("network down")),
+    )
+
+    payload = source.fetch()
+
+    assert payload["status"] == "error"
+    assert payload["count"] == 0
+    assert "Weather fetch failed: RuntimeError: network down" in payload["errors"]
+    assert payload["diagnostics"]["provider_status"] == "error"
 
 
 def test_sources_report_distinguishes_investigation_index_load_status(tmp_path):
@@ -209,6 +344,196 @@ def test_sources_report_surfaces_core_signal_event_metadata(tmp_path):
     assert "Confidence: 0.82" in text
     assert "Supporting facts: 1" in text
     assert "Why: Matched sustained slowdown threshold." in text
+
+
+def test_source_aggregation_separates_prime_observer_and_core_signal(tmp_path):
+    prime_dir = tmp_path / "prime"
+    prime_dir.mkdir()
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-17T12:00:00Z",
+  "current_status": "mixed",
+  "current_label": "Mixed evidence",
+  "current_confidence": "medium"
+}
+""",
+        encoding="utf-8",
+    )
+    core_dir = tmp_path / "core"
+    core_dir.mkdir()
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Summary",
+  "status": "Attention",
+  "summary": "A sustained slowdown was found.",
+  "recommended_action": "Check provider status if symptoms matched.",
+  "events": [
+    {
+      "id": "event-1",
+      "summary": "WAN degradation persisted.",
+      "confidence_reason": "WAN degraded while LAN stayed healthy.",
+      "supporting_facts": [
+        {"summary": "WAN p95 exceeded threshold.", "source": "prime_observer"}
+      ],
+      "recommended_action": "Monitor matching symptom reports.",
+      "prime_observer_reference": {"path": "viz/investigate.html?event=1"}
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    registry = create_default_registry(
+        OlivawConfig(
+            files=FileSourceConfig(directory=tmp_path / "files"),
+            prime_observer=PrimeObserverSourceConfig(directory=prime_dir),
+            core_signal=CoreSignalSourceConfig(directory=core_dir),
+        )
+    )
+
+    aggregate = registry.aggregate()
+
+    source_ids = {source.source_id for source in aggregate.sources}
+    assert {"prime_observer", "core_signal"}.issubset(source_ids)
+    assert any(fact["source_id"] == "prime_observer" for fact in aggregate.facts)
+    assert any(
+        item["source_id"] == "core_signal"
+        for item in aggregate.interpretation_items
+    )
+    assert any(action["source_id"] == "core_signal" for action in aggregate.actions)
+    assert any(
+        reference["target"] == "viz/investigate.html?event=1"
+        for reference in aggregate.references
+    )
+    assert not any(
+        item["source_id"] == "prime_observer"
+        for item in aggregate.interpretation_items
+    )
+
+
+def test_source_aggregation_tolerates_missing_prime_observer(tmp_path):
+    registry = create_default_registry(
+        OlivawConfig(
+            files=FileSourceConfig(directory=tmp_path / "files"),
+            prime_observer=PrimeObserverSourceConfig(directory=tmp_path / "missing"),
+            core_signal=CoreSignalSourceConfig(directory=tmp_path / "missing-core"),
+        )
+    )
+
+    aggregate = registry.aggregate()
+    prime = next(source for source in aggregate.sources if source.source_id == "prime_observer")
+    core = next(source for source in aggregate.sources if source.source_id == "core_signal")
+
+    assert prime.status == "unavailable"
+    assert core.status == "unavailable"
+    assert aggregate.facts
+
+
+def test_source_aggregation_tolerates_failed_source():
+    registry = SourceRegistry()
+    registry.register(ManualSource())
+    registry.register(BrokenSource())
+
+    aggregate = registry.aggregate()
+
+    assert any(source.source_id == "manual" for source in aggregate.sources)
+    broken = next(source for source in aggregate.sources if source.source_id == "broken")
+    assert broken.status == "error"
+    assert "Fetch failed" in broken.message
+    assert any(fact["source_id"] == "manual" for fact in aggregate.facts)
+
+
+def test_source_aggregation_includes_weather_facts():
+    registry = SourceRegistry()
+    registry.register(
+        WeatherSource(
+            enabled=True,
+            latitude=33.4484,
+            longitude=-112.074,
+            location_name="Phoenix",
+            provider=FakeWeatherProvider(),
+        )
+    )
+
+    aggregate = registry.aggregate()
+    weather = aggregate.sources[0]
+
+    assert weather.source_id == "weather"
+    assert weather.source_type == "external_context"
+    assert weather.raw_available is True
+    assert weather.summary_items[0]["summary"].startswith("Currently 72°F")
+    assert any(fact["summary"] == "Rain chance: 10%" for fact in aggregate.facts)
+    assert any(
+        fact["summary"] == "Rain chance: 10%"
+        for fact in aggregate.health_review_context["facts"]
+    )
+
+
+def test_source_aggregation_marks_weather_fetch_failure_as_error():
+    registry = SourceRegistry()
+    registry.register(
+        WeatherSource(
+            enabled=True,
+            latitude=33.4484,
+            longitude=-112.074,
+            provider=FakeWeatherProvider(exc=RuntimeError("network down")),
+        )
+    )
+
+    aggregate = registry.aggregate()
+
+    assert aggregate.sources[0].status == "error"
+    assert "Weather fetch failed" in aggregate.sources[0].message
+    assert aggregate.sources[0].diagnostics["provider_status"] == "error"
+
+
+def test_inspect_sources_tolerates_failed_source():
+    registry = SourceRegistry()
+    registry.register(ManualSource())
+    registry.register(BrokenSource())
+
+    report = inspect_sources(registry=registry)
+
+    assert report["sources"][1]["status"] == "error"
+    assert report["data"][1]["status"] == "error"
+    assert "Fetch failed" in report["data"][1]["errors"][0]
+    assert report["aggregate"]["sources"][1]["status"] == "error"
+
+
+def test_sources_report_includes_normalized_diagnostics(tmp_path):
+    init_data(tmp_path)
+    report = inspect_sources(
+        config=OlivawConfig(files=FileSourceConfig(directory=tmp_path))
+    )
+    text = format_sources_report(report)
+
+    assert "Normalized Sources:" in text
+    assert "Manual example source (manual, manual): ok" in text
+    assert "Raw available: yes" in text
+
+
+def test_sources_report_shows_weather_diagnostics():
+    registry = SourceRegistry()
+    registry.register(
+        WeatherSource(
+            enabled=True,
+            latitude=33.4484,
+            longitude=-112.074,
+            location_name="Phoenix",
+            provider=FakeWeatherProvider(),
+        )
+    )
+
+    report = inspect_sources(registry=registry)
+    text = format_sources_report(report)
+
+    assert "Weather (weather, external_context): ok" in text
+    assert "Weather configured: yes" in text
+    assert "Weather provider: Open-Meteo" in text
+    assert "Weather location: Phoenix" in text
+    assert "Weather last fetch: ok" in text
 
 
 def test_file_source_scans_supported_files(tmp_path):

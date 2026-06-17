@@ -34,6 +34,35 @@ def format_sources_report(report: dict[str, object]) -> str:
     else:
         lines.append("- No sources registered.")
 
+    aggregate = report.get("aggregate")
+    normalized_sources = []
+    if isinstance(aggregate, dict):
+        raw_sources = aggregate.get("sources", [])
+        if isinstance(raw_sources, list):
+            normalized_sources = [
+                source for source in raw_sources if isinstance(source, dict)
+            ]
+    if normalized_sources:
+        lines.extend(["", "Normalized Sources:"])
+        for source in normalized_sources:
+            lines.append(
+                "- {source_name} ({source_id}, {source_type}): {status}".format(
+                    source_name=source.get("source_name", "Unknown source"),
+                    source_id=source.get("source_id", "unknown"),
+                    source_type=source.get("source_type", "unknown"),
+                    status=source.get("status", "unknown"),
+                )
+            )
+            if source.get("freshness"):
+                lines.append(f"  Freshness: {source['freshness']}")
+            if source.get("raw_available") is not None:
+                raw = "yes" if source.get("raw_available") else "no"
+                lines.append(f"  Raw available: {raw}")
+            diagnostics = source.get("diagnostics")
+            if isinstance(diagnostics, dict):
+                for note in _diagnostic_lines(diagnostics):
+                    lines.append(f"  {note}")
+
     lines.extend(["", "Sample Data:"])
     data = report.get("data", [])
     if data:
@@ -100,6 +129,14 @@ def _diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
         ("event_objects_found", "Event objects found"),
         ("interpreted_events_rendered", "Interpreted events rendered"),
         ("latest_event_timestamp", "Latest event timestamp"),
+        ("enabled", "Weather enabled"),
+        ("configured", "Weather configured"),
+        ("provider", "Weather provider"),
+        ("provider_status", "Weather provider status"),
+        ("location_name", "Weather location"),
+        ("units", "Weather units"),
+        ("last_fetch_status", "Weather last fetch"),
+        ("forecast_date", "Weather forecast date"),
     ):
         value = diagnostics.get(key)
         if value not in (None, "", []):

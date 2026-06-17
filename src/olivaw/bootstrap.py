@@ -32,6 +32,13 @@ enabled = true
 directory = "~/core-signal/reports"
 enabled = true
 
+[sources.weather]
+enabled = false
+# latitude = 33.4484
+# longitude = -112.0740
+# location_name = "Phoenix"
+units = "fahrenheit"
+
 [secrets]
 # Replace with a real key in your user config file only:
 # ~/Library/Application Support/Olivaw/config.toml

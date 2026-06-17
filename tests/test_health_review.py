@@ -593,6 +593,62 @@ def test_health_review_prompt_construction_uses_structured_fields_only():
     assert "bucket-level evidence" not in prompt.lower()
 
 
+def test_health_review_digest_uses_aggregated_source_context():
+    digest = build_health_review_digest(
+        {
+            "current_status_label": "Watch now",
+            "status_explanation": "There is a condition worth monitoring.",
+            "what_we_know": [],
+            "worth_knowing": [],
+            "network_status": [],
+            "dns_activity": [],
+            "prime_investigations": [],
+            "core_signal_events": [],
+            "core_signal_explanation": {},
+            "uncertainty_items": [],
+            "source_aggregate": {
+                "health_review_context": {
+                    "facts": [
+                        {
+                            "source_id": "prime_observer",
+                            "summary": "Current network attribution: Mixed evidence",
+                        },
+                        {
+                            "source_id": "weather",
+                            "summary": "Currently 72°F and clear. High 86°F, low 68°F. Rain chance 10%.",
+                        }
+                    ],
+                    "interpretation_items": [
+                        {
+                            "source_id": "core_signal",
+                            "summary": "A sustained slowdown was found.",
+                        }
+                    ],
+                    "actions": [
+                        {
+                            "source_id": "core_signal",
+                            "summary": "Check provider status if symptoms matched.",
+                        }
+                    ],
+                    "references": [],
+                }
+            },
+        }
+    )
+    prompt = build_health_review_prompt(digest)
+
+    assert "aggregated_context:" in prompt
+    assert "Current network attribution: Mixed evidence" in prompt
+    assert "Currently 72°F and clear" in prompt
+    assert "A sustained slowdown was found." in prompt
+    assert "Check provider status if symptoms matched." in prompt
+    assert "Weather facts are external context only" in prompt
+    assert "do not invent weather alerts" in prompt.lower()
+    assert "prime_observer:" not in prompt
+    assert "core_signal:" not in prompt
+    assert "weather:" not in prompt
+
+
 def _dashboard(**overrides: object) -> dict[str, object]:
     dashboard: dict[str, object] = {
         "current_status_label": "Watch now",

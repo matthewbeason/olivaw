@@ -114,12 +114,79 @@ def test_sources_route_renders_registered_sources():
     assert "Local files" in response.text
     assert "Prime Observer" in response.text
     assert "Core Signal" in response.text
+    assert "Weather" in response.text
     assert "manual" in response.text
     assert "files" in response.text
     assert "prime_observer" in response.text
     assert "core_signal" in response.text
+    assert "weather" in response.text
+    assert "Raw available" in response.text
+    assert "local_context" in response.text
     assert "Example item" in response.text
     assert "Demonstrates source plumbing." in response.text
+
+
+def test_sources_route_renders_weather_diagnostics(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    response = client.get("/sources")
+
+    assert response.status_code == 200
+    assert "Weather provider" in response.text
+    assert "Open-Meteo" in response.text
+    assert "Weather location" in response.text
+    assert "Phoenix" in response.text
+    assert "Weather last fetch" in response.text
+    assert "Weather forecast date" in response.text
 
 
 def test_sources_route_renders_investigations_events_and_metadata(monkeypatch, tmp_path):
@@ -301,6 +368,7 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "<summary>What Remains Uncertain" not in response.text
     assert "Recommended Action" in response.text
     assert "Health Review" in response.text
+    assert "Weather:" not in response.text
     assert "Health review unavailable: mocked web test." in response.text
     assert "Status: generation_failed; model: llama3.2:3b; provider: ollama" in (
         response.text
@@ -321,6 +389,99 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "manual, files" in response.text
     assert "Example item from manual source" in response.text
     assert "File found: status/system.txt" in response.text
+
+
+def test_briefing_route_renders_compact_weather_context(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert (
+        "Weather: Currently 72°F and clear. High 86°F, low 68°F. "
+        "Rain chance 10%."
+    ) in response.text
+    assert "This briefing is source-backed using: manual, weather." in response.text
+    assert "Weather does not provide recommendations." in response.text
+    assert response.text.count('class="disclosure-card"') == 1
+
+
+def test_briefing_route_omits_weather_when_unavailable(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Weather:" not in response.text
+    assert "Weather source requires latitude and longitude." in response.text
 
 
 def test_briefing_route_renders_generated_health_review(monkeypatch, tmp_path):

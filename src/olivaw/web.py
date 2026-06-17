@@ -17,6 +17,7 @@ from olivaw.capabilities.sources import SourceInspectionCapability
 from olivaw.config import load_config, public_config
 from olivaw.health import run_health_checks
 from olivaw.assistant.identity import get_identity
+from olivaw.sources.registry import create_default_registry
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
@@ -59,7 +60,9 @@ def chat_submit(request: Request, prompt: str = Form(...)):
 @app.get("/briefing", response_class=HTMLResponse)
 def briefing_page(request: Request):
     config = load_config()
-    briefing = compose_source_briefing(config=config)
+    registry = create_default_registry(config)
+    source_aggregate = registry.aggregate()
+    briefing = compose_source_briefing(registry=registry)
     generated_dt = datetime.now(timezone.utc)
     generated_at = generated_dt.isoformat(timespec="seconds")
     dashboard = _briefing_dashboard(
@@ -69,6 +72,8 @@ def briefing_page(request: Request):
         prime_observer_directory=config.prime_observer.directory,
         prime_observer_base_url=config.prime_observer.base_url,
     )
+    dashboard["source_aggregate"] = source_aggregate.as_dict()
+    dashboard["weather_context"] = _weather_context(source_aggregate.as_dict())
     dashboard["health_review"] = generate_health_review(
         dashboard,
         config=config,
@@ -236,6 +241,22 @@ def _briefing_dashboard(
             "source_details": source_lines,
         }
     )
+
+
+def _weather_context(source_aggregate: dict[str, object]) -> dict[str, str]:
+    for source in _dict_list(source_aggregate.get("sources")):
+        if source.get("source_id") != "weather" or source.get("status") != "ok":
+            continue
+        for item in _dict_list(source.get("summary_items")):
+            summary = str(item.get("summary") or "").strip()
+            if not summary:
+                continue
+            return {
+                "summary": summary,
+                "freshness": str(source.get("freshness") or ""),
+                "observed_at": str(source.get("observed_at") or ""),
+            }
+    return {}
 
 
 def _normalize_briefing_dashboard(dashboard: dict[str, object]) -> dict[str, object]:

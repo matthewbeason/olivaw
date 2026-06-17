@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from olivaw.config import OlivawConfig, load_config
+from olivaw.sources.aggregation import AggregatedSources, aggregate_sources
 from olivaw.sources.base import Source, SourceHealth, SourcePayload
 from olivaw.sources.core_signal import CoreSignalSource
 from olivaw.sources.file_source import FileSource
 from olivaw.sources.manual import ManualSource
 from olivaw.sources.prime_observer import PrimeObserverSource
+from olivaw.sources.weather import WeatherSource
 
 
 class SourceRegistry:
@@ -30,6 +30,9 @@ class SourceRegistry:
 
     def fetch_all(self) -> tuple[SourcePayload, ...]:
         return tuple(source.fetch() for source in self.list_sources())
+
+    def aggregate(self) -> AggregatedSources:
+        return aggregate_sources(self.list_sources())
 
 
 def create_default_registry(config: OlivawConfig | None = None) -> SourceRegistry:
@@ -55,6 +58,15 @@ def create_default_registry(config: OlivawConfig | None = None) -> SourceRegistr
             enabled=resolved_config.core_signal.enabled,
         )
     )
+    registry.register(
+        WeatherSource(
+            enabled=resolved_config.weather.enabled,
+            latitude=resolved_config.weather.latitude,
+            longitude=resolved_config.weather.longitude,
+            location_name=resolved_config.weather.location_name,
+            units=resolved_config.weather.units,
+        )
+    )
     return registry
 
 
@@ -63,7 +75,47 @@ def inspect_sources(
     config: OlivawConfig | None = None,
 ) -> dict[str, object]:
     resolved = registry or create_default_registry(config)
+    aggregate = resolved.aggregate()
     return {
-        "sources": [asdict(status) for status in resolved.health_all()],
-        "data": list(resolved.fetch_all()),
+        "sources": [
+            {
+                "source_id": source.source_id,
+                "display_name": source.source_name,
+                "status": source.status,
+                "message": source.message,
+            }
+            for source in aggregate.sources
+        ],
+        "data": [_safe_payload(source) for source in resolved.list_sources()],
+        "aggregate": aggregate.as_dict(),
     }
+
+
+def _safe_payload(source: Source) -> SourcePayload:
+    try:
+        health = source.health()
+    except Exception as exc:
+        return {
+            "source": getattr(source, "source_id", "unknown"),
+            "status": "error",
+            "items": [],
+            "count": 0,
+            "errors": [f"Health check failed: {type(exc).__name__}: {exc}"],
+        }
+    if health.status != "ok":
+        return {
+            "source": health.source_id,
+            "status": health.status,
+            "items": [],
+            "count": 0,
+        }
+    try:
+        return source.fetch()
+    except Exception as exc:
+        return {
+            "source": health.source_id,
+            "status": "error",
+            "items": [],
+            "count": 0,
+            "errors": [f"Fetch failed: {type(exc).__name__}: {exc}"],
+        }

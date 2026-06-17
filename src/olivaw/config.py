@@ -68,6 +68,15 @@ class CoreSignalSourceConfig:
 
 
 @dataclass(frozen=True)
+class WeatherSourceConfig:
+    enabled: bool = False
+    latitude: float | None = None
+    longitude: float | None = None
+    location_name: str | None = None
+    units: str = "fahrenheit"
+
+
+@dataclass(frozen=True)
 class OlivawConfig:
     local: LocalProviderConfig = field(default_factory=LocalProviderConfig)
     cloud: CloudProviderConfig = field(default_factory=CloudProviderConfig)
@@ -77,6 +86,7 @@ class OlivawConfig:
         default_factory=PrimeObserverSourceConfig
     )
     core_signal: CoreSignalSourceConfig = field(default_factory=CoreSignalSourceConfig)
+    weather: WeatherSourceConfig = field(default_factory=WeatherSourceConfig)
     config_path: Path | None = None
     config_file_exists: bool = False
 
@@ -95,6 +105,7 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
     files_data = sources_data.get("files", {})
     prime_observer_data = sources_data.get("prime_observer", {})
     core_signal_data = sources_data.get("core_signal", {})
+    weather_data = sources_data.get("weather", {})
 
     local = LocalProviderConfig(
         type=str(local_data.get("type", "ollama")),
@@ -180,6 +191,25 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         ),
     )
 
+    weather = WeatherSourceConfig(
+        enabled=_bool_from_env(
+            _env_value("OLIVAW_WEATHER_ENABLED"),
+            bool(weather_data.get("enabled", False)),
+        ),
+        latitude=_optional_float(
+            _env_value("OLIVAW_WEATHER_LATITUDE", weather_data.get("latitude"))
+        ),
+        longitude=_optional_float(
+            _env_value("OLIVAW_WEATHER_LONGITUDE", weather_data.get("longitude"))
+        ),
+        location_name=_optional_str(
+            _env_value("OLIVAW_WEATHER_LOCATION_NAME", weather_data.get("location_name"))
+        ),
+        units=str(
+            _env_value("OLIVAW_WEATHER_UNITS", weather_data.get("units", "fahrenheit"))
+        ),
+    )
+
     return OlivawConfig(
         local=local,
         cloud=cloud,
@@ -187,6 +217,7 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         files=files,
         prime_observer=prime_observer,
         core_signal=core_signal,
+        weather=weather,
         config_path=config_path,
         config_file_exists=config_file_exists,
     )
@@ -219,6 +250,13 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "core_signal": {
                 "directory": str(config.core_signal.directory),
                 "enabled": config.core_signal.enabled,
+            },
+            "weather": {
+                "enabled": config.weather.enabled,
+                "latitude": config.weather.latitude,
+                "longitude": config.weather.longitude,
+                "location_name": config.weather.location_name,
+                "units": config.weather.units,
             },
         },
         "config_path": str(config.config_path) if config.config_path else None,
@@ -260,6 +298,11 @@ def format_config_report(config: OlivawConfig) -> str:
             f"- Prime Observer base URL: {config.prime_observer.base_url or 'not configured'}",
             f"- Core Signal enabled: {'yes' if config.core_signal.enabled else 'no'}",
             f"- Core Signal directory: {config.core_signal.directory}",
+            f"- Weather enabled: {'yes' if config.weather.enabled else 'no'}",
+            f"- Weather location: {config.weather.location_name or 'not configured'}",
+            f"- Weather latitude: {_format_optional_float(config.weather.latitude)}",
+            f"- Weather longitude: {_format_optional_float(config.weather.longitude)}",
+            f"- Weather units: {config.weather.units}",
         ]
     )
 
@@ -330,6 +373,19 @@ def _optional_str(value: object | None) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _optional_float(value: object | None) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return float(text)
+
+
+def _format_optional_float(value: float | None) -> str:
+    return str(value) if value is not None else "not configured"
 
 
 def _env_value(name: str, default: object | None = None) -> object | None:

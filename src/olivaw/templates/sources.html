@@ -11,13 +11,22 @@
         <dl>
           <dt>ID</dt><dd>{{ source.source_id }}</dd>
           <dt>Status</dt><dd>{{ source.message }}</dd>
+          {% for normalized in report.aggregate.sources %}
+            {% if normalized.source_id == source.source_id %}
+              <dt>Type</dt><dd>{{ normalized.source_type }}</dd>
+              <dt>Raw available</dt><dd>{{ "yes" if normalized.raw_available else "no" }}</dd>
+              {% if normalized.freshness %}
+                <dt>Freshness</dt><dd>{{ normalized.freshness }}</dd>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
         </dl>
         {% for payload in report.data %}
           {% if payload["source"] == source.source_id and "count" in payload %}
             {% if payload.root %}
               <p>Source path: <code>{{ payload.root }}</code></p>
             {% endif %}
-            <p>File count: {{ payload["count"] }}</p>
+            <p>Item count: {{ payload["count"] }}</p>
             {% if payload.diagnostics %}
               <dl>
                 {% if payload.diagnostics.selection %}
@@ -85,6 +94,38 @@
                 {% if payload.diagnostics.latest_event_timestamp %}
                   <dt>Latest event timestamp</dt>
                   <dd>{{ payload.diagnostics.latest_event_timestamp }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.enabled is defined %}
+                  <dt>Weather enabled</dt>
+                  <dd>{{ payload.diagnostics.enabled }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.configured is defined %}
+                  <dt>Weather configured</dt>
+                  <dd>{{ payload.diagnostics.configured }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.provider %}
+                  <dt>Weather provider</dt>
+                  <dd>{{ payload.diagnostics.provider }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.provider_status %}
+                  <dt>Weather provider status</dt>
+                  <dd>{{ payload.diagnostics.provider_status }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.location_name %}
+                  <dt>Weather location</dt>
+                  <dd>{{ payload.diagnostics.location_name }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.units %}
+                  <dt>Weather units</dt>
+                  <dd>{{ payload.diagnostics.units }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.last_fetch_status %}
+                  <dt>Weather last fetch</dt>
+                  <dd>{{ payload.diagnostics.last_fetch_status }}</dd>
+                {% endif %}
+                {% if payload.diagnostics.forecast_date %}
+                  <dt>Weather forecast date</dt>
+                  <dd>{{ payload.diagnostics.forecast_date }}</dd>
                 {% endif %}
                 {% if payload.diagnostics.investigation_index_modified %}
                   <dt>Investigation index modified</dt>

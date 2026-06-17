@@ -52,6 +52,11 @@ def render_source_briefing(snapshots: list[dict[str, object]]) -> str:
         lines.extend(["", "## Core Signal"])
         lines.extend(core_signal_lines)
 
+    weather_lines = _weather_lines(snapshots)
+    if weather_lines:
+        lines.extend(["", "## Weather"])
+        lines.extend(weather_lines)
+
     lines.extend(["", "## Files"])
     file_lines = _file_lines(snapshots)
     if file_lines:
@@ -270,6 +275,31 @@ def _core_signal_lines(snapshots: list[dict[str, object]]) -> list[str]:
             dns_action = str(item.get("dns_recommended_action") or "").strip()
             if dns_action:
                 lines.append(f"  - DNS recommended action: {dns_action}")
+        return lines
+    return []
+
+
+def _weather_lines(snapshots: list[dict[str, object]]) -> list[str]:
+    for snapshot in snapshots:
+        health = _health(snapshot)
+        if health.source_id != "weather":
+            continue
+        if health.status != "ok":
+            return [f"- Status: {health.status} - {health.message}"]
+
+        items = _items(_payload(snapshot))
+        if not items:
+            return ["- Status: ok, no Weather items returned."]
+
+        lines = ["- External context only; Weather does not provide recommendations."]
+        lines.extend(_payload_diagnostic_lines(_payload(snapshot), source_id="weather"))
+        for item in items[:1]:
+            summary = str(item.get("summary") or "").strip()
+            if summary:
+                lines.append(f"- Weather: {summary}")
+            forecast_date = str(item.get("forecast_date") or "").strip()
+            if forecast_date:
+                lines.append(f"  - Forecast date: {forecast_date}")
         return lines
     return []
 
@@ -674,6 +704,8 @@ def _payload_diagnostic_lines(
         return _prime_observer_diagnostic_lines(diagnostics)
     if source_id == "core_signal":
         return _core_signal_diagnostic_lines(diagnostics)
+    if source_id == "weather":
+        return _weather_diagnostic_lines(diagnostics)
     return []
 
 
@@ -723,6 +755,24 @@ def _core_signal_diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
         lines.append(
             "- Generated timestamps: " + ", ".join(str(item) for item in generated)
         )
+    return lines
+
+
+def _weather_diagnostic_lines(diagnostics: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    for key, label in (
+        ("enabled", "Weather enabled"),
+        ("configured", "Weather configured"),
+        ("provider", "Weather provider"),
+        ("provider_status", "Weather provider status"),
+        ("location_name", "Weather location"),
+        ("units", "Weather units"),
+        ("last_fetch_status", "Weather last fetch"),
+        ("forecast_date", "Weather forecast date"),
+    ):
+        value = diagnostics.get(key)
+        if value not in (None, "", []):
+            lines.append(f"- {label}: {value}")
     return lines
 
 
