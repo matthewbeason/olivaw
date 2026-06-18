@@ -24,6 +24,7 @@ WEATHER_PROMPT = "Hi could you tell me what the weather is in Phoenix az"
 @pytest.fixture(autouse=True)
 def mock_health_checks(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("olivaw.web._HEALTH_REVIEW_CACHE", None)
 
     def fake_health(config=None):
         return HealthReport(
@@ -74,9 +75,105 @@ def test_home_route_renders():
     assert 'href="/chat?prompt=How%20was%20the%20network%20overnight%3F"' in (
         response.text
     )
-    assert "Health review unavailable: mocked web test." in response.text
+    assert "Health review not generated yet." in response.text
     assert "Event ID" not in response.text
     assert "Raw briefing" not in response.text
+
+
+def test_home_route_does_not_generate_health_review_synchronously(monkeypatch):
+    def fail_generate(dashboard, *, config):
+        raise AssertionError("GET / must not synchronously generate Health Review")
+
+    monkeypatch.setattr("olivaw.web.generate_health_review", fail_generate)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Health review not generated yet." in response.text
+
+
+def test_briefing_route_does_not_generate_health_review_synchronously(monkeypatch):
+    def fail_generate(dashboard, *, config):
+        raise AssertionError("GET /briefing must not synchronously generate Health Review")
+
+    monkeypatch.setattr("olivaw.web.generate_health_review", fail_generate)
+
+    response = client.get("/briefing")
+
+    assert response.status_code == 200
+    assert "Health review not generated yet." in response.text
+
+
+def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-17T14:23:00+00:00",
+  "current_attribution": {
+    "label": "Likely upstream (ISP / path)",
+    "status": "likely_upstream",
+    "confidence": "medium",
+    "evidence": ["WAN degraded while LAN remained healthy."]
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Morning Brief",
+  "date": "2026-06-17",
+  "status": "Watch",
+  "summary": "One interpreted slowdown event is present.",
+  "recommended_action": "No action unless people noticed issues.",
+  "events": [
+    {
+      "summary": "A sustained slowdown was observed.",
+      "status": "attention",
+      "severity": "attention",
+      "window_start": "2026-06-17 14:20",
+      "window_end": "2026-06-17 14:23",
+      "confidence": "medium",
+      "issue_location": "Likely upstream (ISP / path)",
+      "prime_observer_investigation": "viz/investigate.html?start=1&end=2"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Network Signal" in response.text
+    assert "Status" in response.text
+    assert "Attribution" in response.text
+    assert "Likely upstream (ISP / path)" in response.text
+    assert "Confidence" in response.text
+    assert "medium" in response.text
+    assert "Last incident" in response.text
+    assert "2026-06-17 14:20 to 2026-06-17 14:23" in response.text
+    assert "Open Evidence Package" in response.text
+    assert "spark-strip" not in response.text
+    assert "spark-segment" not in response.text
 
 
 def test_home_navigation_simplifies_primary_routes():
@@ -399,13 +496,9 @@ def test_briefing_route_renders_source_backed_briefing(monkeypatch, tmp_path):
     assert "Recommended Action" in response.text
     assert "Health Review" in response.text
     assert "Weather:" not in response.text
-    assert "Health review unavailable: mocked web test." in response.text
-    assert "Status: generation_failed; model: llama3.2:3b; provider: ollama" in (
-        response.text
-    )
-    assert "Generated from Prime Observer evidence and Core Signal interpretation." in (
-        response.text
-    )
+    assert "Health review not generated yet." in response.text
+    assert "Status: not_generated" in response.text
+    assert "Refresh Health Review" in response.text
     assert "Evidence Package" in response.text
     assert "Facts" in response.text
     assert "Interpretation" in response.text
@@ -664,15 +757,46 @@ def test_briefing_route_renders_generated_health_review(monkeypatch, tmp_path):
         ),
     )
 
+    refresh = client.post(
+        "/health-review/refresh",
+        headers={"referer": "http://testserver/briefing"},
+    )
     response = client.get("/briefing")
 
+    assert refresh.status_code == 200
     assert response.status_code == 200
     executive_section = response.text.split('<section class="details-stack">', 1)[0]
     assert "Health Review" in executive_section
     assert "Prime Observer evidence and Core Signal interpretation" in executive_section
-    assert "Generated by fake-local using fake-model in 123 ms." in executive_section
+    assert "fake-local / fake-model" in executive_section
+    assert "123 ms" in executive_section
     assert "Evidence Package" in executive_section
     assert response.text.count('class="disclosure-card"') == 1
+
+
+def test_health_review_refresh_caches_rejected_result(monkeypatch):
+    monkeypatch.setattr(
+        "olivaw.web.generate_health_review",
+        lambda dashboard, *, config: HealthReviewResult(
+            text="Health review unavailable: guardrail rejected.",
+            status="guardrail_rejected",
+            reason="unsupported recommendation",
+            provider="fake-local",
+            model="fake-model",
+            guardrail_rejected=True,
+        ),
+    )
+
+    refresh = client.post(
+        "/health-review/refresh",
+        headers={"referer": "http://testserver/"},
+    )
+    response = client.get("/")
+
+    assert refresh.status_code == 200
+    assert response.status_code == 200
+    assert "Health review unavailable: guardrail rejected." in response.text
+    assert "unsupported recommendation" in response.text
 
 
 def test_briefing_route_reflects_changed_source_data_between_requests(

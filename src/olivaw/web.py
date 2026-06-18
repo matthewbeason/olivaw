@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import json
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Request as FastAPIRequest
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from olivaw.briefing import compose_briefing, compose_source_briefing
-from olivaw.briefing.health_review import HealthReviewResult, generate_health_review
+from olivaw.briefing.health_review import generate_health_review
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.capabilities.sources import SourceInspectionCapability
@@ -25,6 +28,30 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 templates.env.auto_reload = False
 app = FastAPI(title="Olivaw", version="0.7.0")
+HEALTH_REVIEW_CACHE_TTL = timedelta(minutes=15)
+
+
+@dataclass(frozen=True)
+class HealthReviewCacheEntry:
+    text: str
+    status: str
+    reason: str = ""
+    provider: str = ""
+    model: str = ""
+    latency_ms: int | None = None
+    guardrail_rejected: bool = False
+    generated_at: datetime | None = None
+    expires_at: datetime | None = None
+    source_fingerprint: str = ""
+    cache_state: str = "missing"
+    generated_display: str = ""
+
+    @property
+    def available(self) -> bool:
+        return self.status == "available"
+
+
+_HEALTH_REVIEW_CACHE: HealthReviewCacheEntry | None = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -86,8 +113,23 @@ def briefing_page(request: Request):
     return response
 
 
+@app.post("/health-review/refresh")
+def refresh_health_review(request: FastAPIRequest):
+    config = load_config()
+    _source_backed_dashboard(config, refresh_health_review=True)
+    redirect_to = request.headers.get("referer") or "/"
+    parsed = urlparse(redirect_to)
+    if parsed.netloc:
+        redirect_to = parsed.path or "/"
+        if parsed.query:
+            redirect_to = f"{redirect_to}?{parsed.query}"
+    return RedirectResponse(redirect_to, status_code=303)
+
+
 def _source_backed_dashboard(
     config: OlivawConfig,
+    *,
+    refresh_health_review: bool = False,
 ) -> tuple[object, dict[str, object], str]:
     registry = create_default_registry(config)
     source_aggregate = registry.aggregate()
@@ -103,12 +145,90 @@ def _source_backed_dashboard(
     )
     dashboard["source_aggregate"] = source_aggregate.as_dict()
     dashboard["weather_context"] = _weather_context(source_aggregate.as_dict())
-    dashboard["health_review"] = generate_health_review(
+    fingerprint = _health_review_source_fingerprint(dashboard)
+    dashboard["health_review"] = _cached_health_review(
         dashboard,
         config=config,
+        source_fingerprint=fingerprint,
+        refresh=refresh_health_review,
     )
     dashboard["generated_display"] = _human_generated_time(generated_dt)
     return briefing, dashboard, generated_at
+
+
+def _cached_health_review(
+    dashboard: dict[str, object],
+    *,
+    config: OlivawConfig,
+    source_fingerprint: str,
+    refresh: bool = False,
+    now: datetime | None = None,
+) -> HealthReviewCacheEntry:
+    global _HEALTH_REVIEW_CACHE
+    current_time = now or datetime.now(timezone.utc)
+    cached = _HEALTH_REVIEW_CACHE
+    if not refresh and cached is not None:
+        cache_state = "cached"
+        if cached.expires_at is not None and cached.expires_at <= current_time:
+            cache_state = "stale"
+        return replace(
+            cached,
+            cache_state=cache_state,
+            generated_display=_health_review_generated_display(cached, current_time),
+        )
+
+    if not refresh:
+        return HealthReviewCacheEntry(
+            text="Health review not generated yet.",
+            status="not_generated",
+            reason="Use refresh to generate a cached Health Review.",
+            source_fingerprint=source_fingerprint,
+            cache_state="missing",
+        )
+
+    result = generate_health_review(dashboard, config=config)
+    _HEALTH_REVIEW_CACHE = HealthReviewCacheEntry(
+        text=result.text,
+        status=result.status,
+        reason=result.reason,
+        provider=result.provider,
+        model=result.model,
+        latency_ms=result.latency_ms,
+        guardrail_rejected=result.guardrail_rejected,
+        generated_at=current_time,
+        expires_at=current_time + HEALTH_REVIEW_CACHE_TTL,
+        source_fingerprint=source_fingerprint,
+        cache_state="cached",
+        generated_display=_health_review_generated_display(
+            HealthReviewCacheEntry(
+                text=result.text,
+                status=result.status,
+                generated_at=current_time,
+            ),
+            current_time,
+        ),
+    )
+    return _HEALTH_REVIEW_CACHE
+
+
+def _health_review_generated_display(
+    entry: HealthReviewCacheEntry,
+    now: datetime,
+) -> str:
+    if entry.generated_at is None:
+        return ""
+    return _human_generated_time(entry.generated_at, now=now)
+
+
+def _health_review_source_fingerprint(dashboard: dict[str, object]) -> str:
+    payload = {
+        "source_aggregate": dashboard.get("source_aggregate"),
+        "status": dashboard.get("status"),
+        "network_status": dashboard.get("network_status"),
+        "core_signal_events": dashboard.get("core_signal_events"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _overview_context(dashboard: dict[str, object], health: HealthReport) -> dict[str, object]:
@@ -117,7 +237,7 @@ def _overview_context(dashboard: dict[str, object], health: HealthReport) -> dic
         source_aggregate = {}
     sources = _dict_list(source_aggregate.get("sources"))
     health_review = dashboard.get("health_review")
-    if not isinstance(health_review, HealthReviewResult):
+    if not hasattr(health_review, "status"):
         health_review = None
 
     source_freshness = _source_freshness_items(sources, health_review, health)
@@ -125,7 +245,7 @@ def _overview_context(dashboard: dict[str, object], health: HealthReport) -> dic
         "context_cards": _overview_context_cards(dashboard, sources, health),
         "recent_activity": _recent_activity_items(dashboard, sources, health_review),
         "source_freshness": source_freshness,
-        "network_visualization": _network_visualization(dashboard),
+        "network_signal": _network_signal(dashboard),
         "ask_prompts": [
             "How was the network overnight?",
             "Anything important today?",
@@ -186,7 +306,7 @@ def _overview_context_cards(
 
 def _source_freshness_items(
     sources: list[dict[str, object]],
-    health_review: HealthReviewResult | None,
+    health_review: object | None,
     health: HealthReport,
 ) -> list[dict[str, str]]:
     items = []
@@ -223,7 +343,7 @@ def _source_freshness_items(
 def _recent_activity_items(
     dashboard: dict[str, object],
     sources: list[dict[str, object]],
-    health_review: HealthReviewResult | None,
+    health_review: object | None,
 ) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     if health_review is not None:
@@ -263,21 +383,69 @@ def _recent_activity_items(
     return _dedupe_activity(items)[:5]
 
 
-def _network_visualization(dashboard: dict[str, object]) -> dict[str, object]:
+def _network_signal(dashboard: dict[str, object]) -> dict[str, object]:
     network = [str(item) for item in _list_value(dashboard.get("network_status"))]
-    dns = [str(item) for item in _list_value(dashboard.get("dns_activity"))]
     events = _dict_list(dashboard.get("core_signal_events"))
-    labels = network[:3] + dns[:2]
-    segments = []
-    tone = str(dashboard.get("status_tone") or "healthy")
-    for index in range(8):
-        segments.append({"tone": tone if index < max(1, len(labels)) else "muted"})
+    thought = _metadata_mapping(dashboard.get("what_we_think"))
+    latest_sample = _first_line_value(network, ("Latest sample timestamp",))
+    current_state = _first_line_value(
+        network,
+        (
+            "Current LAN/WAN state",
+            "Current network state",
+            "Current status",
+            "Status",
+        ),
+    )
+    attribution = (
+        thought.get("value")
+        or _metadata_mapping(dashboard.get("attribution_assessment")).get("value")
+        or _first_event_value(events, "issue_location")
+    )
+    confidence = thought.get("confidence") or _first_event_value(events, "confidence")
+    affected_window = _first_event_value(events, "affected_window")
+    field_candidates = [
+        {
+            "label": "Status",
+            "value": current_state or str(dashboard.get("current_status_label") or ""),
+        },
+        {"label": "Attribution", "value": attribution},
+        {"label": "Confidence", "value": confidence},
+        {"label": "Latest sample", "value": latest_sample},
+        {"label": "Last incident", "value": affected_window},
+        {
+            "label": "Interpreted events",
+            "value": f"{len(events)} interpreted event{'s' if len(events) != 1 else ''}",
+        },
+    ]
     return {
-        "summary": labels[0] if labels else str(dashboard.get("status_explanation") or ""),
-        "metrics": labels[:4],
+        "summary": current_state
+        or str(dashboard.get("status_explanation") or "No active condition reported."),
+        "fields": [
+            {"label": item["label"], "value": str(item["value"])}
+            for item in field_candidates
+            if str(item["value"] or "").strip()
+        ],
         "event_count": len(events),
-        "segments": segments,
+        "tone": str(dashboard.get("status_tone") or "healthy"),
     }
+
+
+def _first_line_value(lines: list[str], labels: tuple[str, ...]) -> str:
+    lowered_labels = tuple(label.lower() for label in labels)
+    for line in lines:
+        label, separator, value = line.partition(":")
+        if separator and label.strip().lower() in lowered_labels:
+            return value.strip()
+    return ""
+
+
+def _first_event_value(events: list[dict[str, object]], key: str) -> str:
+    for event in events:
+        value = str(event.get(key) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _source_panel_tone(sources: list[dict[str, object]]) -> str:
