@@ -11,19 +11,46 @@ SUPPORTED_RISK_LEVELS = {"safe_read", "local_state_change"}
 
 @dataclass
 class ActionHistory:
+    last_suggested_action: ActionRequest | None = None
     last_action: ActionRequest | None = None
     last_result: ActionResult | None = None
+    suggested_at: datetime | None = None
+    approved_at: datetime | None = None
+    executed_at: datetime | None = None
     last_run: datetime | None = None
+
+    def record_suggestion(
+        self,
+        request: ActionRequest,
+        *,
+        suggested_at: datetime | None = None,
+    ) -> None:
+        self.last_suggested_action = request
+        self.suggested_at = suggested_at or datetime.now(timezone.utc)
+
+    def record_approval(
+        self,
+        request: ActionRequest,
+        *,
+        approved_at: datetime | None = None,
+    ) -> None:
+        self.approved_at = approved_at or datetime.now(timezone.utc)
+        self.last_action = request
 
     def record(self, request: ActionRequest, result: ActionResult) -> None:
         self.last_action = request
         self.last_result = result
+        self.executed_at = request.executed_at or result.completed_at
         self.last_run = result.completed_at
 
     def as_dict(self) -> dict[str, object]:
         return {
+            "last_suggested_action": self.last_suggested_action,
             "last_action": self.last_action,
             "last_result": self.last_result,
+            "suggested_at": self.suggested_at,
+            "approved_at": self.approved_at,
+            "executed_at": self.executed_at,
             "last_run": self.last_run,
         }
 

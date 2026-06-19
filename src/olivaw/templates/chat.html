@@ -1,15 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>Chat</h1>
-  <p>Provider-routed placeholder for future conversation behavior.</p>
-  <form method="post" action="/chat">
-    <label for="prompt">Prompt</label>
-    <textarea id="prompt" name="prompt">{{ prompt }}</textarea>
-    <button type="submit">Send</button>
-  </form>
-  {% if response %}
-    <h2>Response</h2>
-    <pre>{{ response }}</pre>
-  {% endif %}
-{% endblock %}
+  <div class="chat-shell">
+    <section class="ops-card">
+      <h1>Chat</h1>
+      <p>Ask Olivaw for source-backed context or discover available operator actions.</p>
+      <form class="chat-form" method="post" action="/chat">
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" name="prompt">{{ prompt }}</textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
 
+    {% if response %}
+      <section class="ops-card chat-response">
+        <h2>Response</h2>
+        <pre>{{ response }}</pre>
+      </section>
+    {% endif %}
+
+    {% if suggested_action %}
+      <section>
+        {% if suggestion_message %}
+          <p class="source-footnote">{{ suggestion_message }}</p>
+        {% endif %}
+        {% with action=suggested_action, prompt=prompt %}
+          {% include "_action_suggestion_card.html" %}
+        {% endwith %}
+      </section>
+    {% endif %}
+
+    {% if action_result %}
+      <section class="ops-card">
+        <div class="action-result tone-{% if action_result.success %}healthy{% else %}action{% endif %}">
+          <p class="card-label">Action Result</p>
+          <p>{{ action_result.message }}</p>
+          {% if action_result.metadata.href %}
+            <a class="button-link compact-link" href="{{ action_result.metadata.href }}">
+              {{ action_result.metadata.label or "Open result" }}
+            </a>
+          {% endif %}
+          {% if action_result.metadata.sources %}
+            <dl class="action-source-list">
+              {% for source in action_result.metadata.sources %}
+                <div>
+                  <dt>{{ source.source_name or source.source_id }}</dt>
+                  <dd>{{ source.source_id }}; {{ source.status }}{% if source.freshness %}; {{ source.freshness }}{% endif %}</dd>
+                </div>
+              {% endfor %}
+            </dl>
+          {% endif %}
+        </div>
+        {% if last_action %}
+          <p class="source-footnote">
+            Last action: {{ last_action.action_id | replace("_", " ") | title }}{% if last_run_display %}; {{ last_run_display }}{% endif %}.
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    <section class="ops-card chat-actions-panel">
+      <div class="section-heading">
+        <h2>Available Actions</h2>
+        <span class="card-label">Operator initiated</span>
+      </div>
+      <div class="operator-actions">
+        {% for action in actions.available %}
+          <form method="post" action="/actions/execute">
+            <input type="hidden" name="action_id" value="{{ action.action_id }}">
+            <button type="submit">{{ action.label }}</button>
+            <p class="meta-text">{{ action.description }}</p>
+            {% if action.helper %}
+              <p class="action-helper">{{ action.helper }}</p>
+            {% endif %}
+          </form>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+{% endblock %}

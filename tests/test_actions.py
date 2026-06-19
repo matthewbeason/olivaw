@@ -8,6 +8,7 @@ from olivaw.actions import (
     ActionDefinition,
     ActionExecutionContext,
     ActionHistory,
+    IntentResolver,
     ActionRegistry,
     ActionRequest,
     ActionResult,
@@ -156,16 +157,48 @@ def test_invalid_action_handling_records_bounded_failure():
 def test_action_history_tracks_last_action_and_result():
     history = ActionHistory()
 
+    suggestion = ActionRequest(action_id="refresh_sources")
+    history.record_suggestion(suggestion)
+    history.record_approval(suggestion)
     result = execute_action(
         create_builtin_action_registry(),
-        ActionRequest(action_id="refresh_sources"),
+        suggestion,
         _context(refresh_sources=lambda: {"source_count": 0, "ok_count": 0}),
         history=history,
     )
 
     assert history.as_dict()["last_action"] is not None
+    assert history.as_dict()["last_suggested_action"] == suggestion
+    assert history.as_dict()["suggested_at"] is not None
+    assert history.as_dict()["approved_at"] is not None
     assert history.as_dict()["last_result"] is result
+    assert history.as_dict()["executed_at"] == result.started_at
     assert history.as_dict()["last_run"] == result.completed_at
+
+
+@pytest.mark.parametrize(
+    ("prompt", "action_id"),
+    [
+        ("refresh the health review", "refresh_health_review"),
+        ("update sources", "refresh_sources"),
+        ("show diagnostics", "source_diagnostics"),
+        ("open evidence", "open_evidence_package"),
+        ("open prime observer", "open_prime_observer"),
+    ],
+)
+def test_intent_resolver_matches_supported_requests(prompt: str, action_id: str):
+    resolver = IntentResolver(create_builtin_action_registry())
+
+    result = resolver.resolve(prompt)
+
+    assert result is not None
+    assert result.action_id == action_id
+
+
+def test_intent_resolver_returns_none_for_unknown_request():
+    resolver = IntentResolver(create_builtin_action_registry())
+
+    assert resolver.resolve("What's the weather today?") is None
 
 
 def _definition(action_id: str) -> ActionDefinition:

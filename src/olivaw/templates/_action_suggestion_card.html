@@ -1,0 +1,23 @@
+<section class="ops-card action-suggestion-card tone-{{ action.risk_level if action.risk_level else 'muted' }}">
+  <p class="card-label">Suggested Action</p>
+  <h2>{{ action.label }}</h2>
+  <p>{{ action.description }}</p>
+  <dl class="signal-list action-suggestion-meta">
+    <div>
+      <dt>Category</dt>
+      <dd>{{ action.category | replace("_", " ") | title }}</dd>
+    </div>
+    <div>
+      <dt>Risk</dt>
+      <dd>{{ action.risk_level }}</dd>
+    </div>
+  </dl>
+  {% if action.helper %}
+    <p class="action-helper">{{ action.helper }}</p>
+  {% endif %}
+  <form method="post" action="/chat/actions/approve">
+    <input type="hidden" name="action_id" value="{{ action.action_id }}">
+    <input type="hidden" name="prompt" value="{{ prompt }}">
+    <button type="submit">Run Action</button>
+  </form>
+</section>

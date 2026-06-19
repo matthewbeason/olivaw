@@ -15,6 +15,7 @@ from starlette.requests import Request
 from olivaw.actions import (
     ActionExecutionContext,
     ActionHistory,
+    IntentResolver,
     ActionRequest,
     create_builtin_action_registry,
     execute_action,
@@ -61,6 +62,7 @@ class HealthReviewCacheEntry:
 _HEALTH_REVIEW_CACHE: HealthReviewCacheEntry | None = None
 _ACTION_REGISTRY = create_builtin_action_registry()
 _ACTION_HISTORY = ActionHistory()
+_INTENT_RESOLVER = IntentResolver(_ACTION_REGISTRY)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -94,17 +96,52 @@ def chat_page(request: Request):
     return templates.TemplateResponse(
         request,
         "chat.html",
-        {"response": None, "prompt": request.query_params.get("prompt", "")},
+        _chat_template_context(
+            prompt=request.query_params.get("prompt", ""),
+        ),
     )
 
 
 @app.post("/chat", response_class=HTMLResponse)
 def chat_submit(request: Request, prompt: str = Form(...)):
+    suggestion = _resolve_action_suggestion(prompt)
+    if suggestion is not None:
+        suggestion_request = ActionRequest(action_id=str(suggestion["action_id"]))
+        _ACTION_HISTORY.record_suggestion(suggestion_request)
+        return templates.TemplateResponse(
+            request,
+            "chat.html",
+            _chat_template_context(
+                prompt=prompt,
+                response="I can do that.",
+                suggested_action=suggestion,
+                suggestion_message="Suggested action:",
+            ),
+        )
+
     response = ChatCapability().run_with_attribution(prompt).text
     return templates.TemplateResponse(
         request,
         "chat.html",
-        {"response": response, "prompt": prompt},
+        _chat_template_context(prompt=prompt, response=response),
+    )
+
+
+@app.post("/chat/actions/approve", response_class=HTMLResponse)
+def approve_chat_action(
+    request: Request,
+    action_id: str = Form(...),
+    prompt: str = Form(""),
+):
+    result = _execute_web_action(action_id)
+    return templates.TemplateResponse(
+        request,
+        "chat.html",
+        _chat_template_context(
+            prompt=prompt,
+            response="Action executed.",
+            action_result=result,
+        ),
     )
 
 
@@ -149,6 +186,7 @@ def execute_action_request(
 def _execute_web_action(action_id: str):
     config = load_config()
     request = ActionRequest(action_id=action_id)
+    _ACTION_HISTORY.record_approval(request)
     return execute_action(
         _ACTION_REGISTRY,
         request,
@@ -248,28 +286,8 @@ def _action_view(
     *,
     show_result: bool,
 ) -> dict[str, object]:
-    available_actions = [
-        definition.as_dict() | {"disabled": False, "helper": ""}
-        for definition in _ACTION_REGISTRY.list_actions()
-    ]
-    if not config.prime_observer.base_url:
-        available_actions = [
-            _prime_observer_action_disabled(action)
-            if action["action_id"] == "open_prime_observer"
-            else action
-            for action in available_actions
-        ]
-    if not _has_evidence_href(dashboard):
-        available_actions = [
-            {
-                **action,
-                "helper": "No HTTP-backed evidence link is available yet.",
-            }
-            if action["action_id"] == "open_evidence_package"
-            else action
-            for action in available_actions
-        ]
-    history = _ACTION_HISTORY.as_dict()
+    available_actions = _available_actions(config, dashboard)
+    history = _action_history_view()
     return {
         "available": available_actions,
         "history": history,
@@ -303,6 +321,76 @@ def _action_last_run_display(value: object) -> str:
     if not isinstance(value, datetime):
         return ""
     return _human_generated_time(value)
+
+
+def _chat_template_context(
+    *,
+    prompt: str,
+    response: str | None = None,
+    suggested_action: dict[str, object] | None = None,
+    suggestion_message: str | None = None,
+    action_result: object | None = None,
+) -> dict[str, object]:
+    config = load_config()
+    _, dashboard, _ = _source_backed_dashboard(config)
+    history = _action_history_view()
+    return {
+        "prompt": prompt,
+        "response": response,
+        "suggested_action": suggested_action,
+        "suggestion_message": suggestion_message,
+        "action_result": action_result,
+        "actions": _action_view(config, dashboard, show_result=False),
+        "last_action": history["last_action"],
+        "last_run_display": history["last_run_display"],
+    }
+
+
+def _resolve_action_suggestion(prompt: str) -> dict[str, object] | None:
+    match = _INTENT_RESOLVER.resolve(prompt)
+    if match is None:
+        return None
+    config = load_config()
+    _, dashboard, _ = _source_backed_dashboard(config)
+    for action in _available_actions(config, dashboard):
+        if action["action_id"] == match.action_id:
+            return action
+    return None
+
+
+def _available_actions(
+    config: OlivawConfig,
+    dashboard: dict[str, object],
+) -> list[dict[str, object]]:
+    available_actions = [
+        definition.as_dict() | {"disabled": False, "helper": ""}
+        for definition in _ACTION_REGISTRY.list_actions()
+    ]
+    if not config.prime_observer.base_url:
+        available_actions = [
+            _prime_observer_action_disabled(action)
+            if action["action_id"] == "open_prime_observer"
+            else action
+            for action in available_actions
+        ]
+    if not _has_evidence_href(dashboard):
+        available_actions = [
+            {
+                **action,
+                "helper": "No HTTP-backed evidence link is available yet.",
+            }
+            if action["action_id"] == "open_evidence_package"
+            else action
+            for action in available_actions
+        ]
+    return available_actions
+
+
+def _action_history_view() -> dict[str, object]:
+    history = _ACTION_HISTORY.as_dict()
+    return history | {
+        "last_run_display": _action_last_run_display(history.get("last_run")),
+    }
 
 
 def _source_backed_dashboard(

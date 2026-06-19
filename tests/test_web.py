@@ -104,8 +104,12 @@ def test_home_route_does_not_create_action_request(monkeypatch):
     response = client.get("/")
 
     assert response.status_code == 200
+    assert web._ACTION_HISTORY.last_suggested_action is None
     assert web._ACTION_HISTORY.last_action is None
     assert web._ACTION_HISTORY.last_result is None
+    assert web._ACTION_HISTORY.suggested_at is None
+    assert web._ACTION_HISTORY.approved_at is None
+    assert web._ACTION_HISTORY.executed_at is None
 
 
 def test_action_execution_requires_explicit_post():
@@ -2272,6 +2276,86 @@ def test_chat_post_renders_chat_response(monkeypatch):
 
     assert response.status_code == 200
     assert "mocked OpenAI-capable chat response" in response.text
+
+
+def test_chat_post_creates_action_suggestion_without_executing(monkeypatch):
+    import olivaw.web as web
+
+    def fail_run_with_attribution(self, prompt, config=None):
+        raise AssertionError("suggested actions should not call chat provider")
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        fail_run_with_attribution,
+    )
+
+    response = client.post("/chat", data={"prompt": "Refresh the health review."})
+
+    assert response.status_code == 200
+    assert "I can do that." in response.text
+    assert "Suggested Action" in response.text
+    assert "Refresh Health Review" in response.text
+    assert "Run Action" in response.text
+    assert web._ACTION_HISTORY.last_suggested_action is not None
+    assert web._ACTION_HISTORY.last_suggested_action.action_id == (
+        "refresh_health_review"
+    )
+    assert web._ACTION_HISTORY.suggested_at is not None
+    assert web._ACTION_HISTORY.last_action is None
+    assert web._ACTION_HISTORY.last_result is None
+    assert web._ACTION_HISTORY.approved_at is None
+    assert web._ACTION_HISTORY.executed_at is None
+
+
+def test_chat_post_unknown_request_continues_normal_chat(monkeypatch):
+    class FakeResponse:
+        text = "normal chat response"
+
+    def fake_run_with_attribution(self, prompt, config=None):
+        assert prompt == "What's the weather today?"
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        fake_run_with_attribution,
+    )
+
+    response = client.post("/chat", data={"prompt": "What's the weather today?"})
+
+    assert response.status_code == 200
+    assert "normal chat response" in response.text
+    assert "Suggested Action" not in response.text
+
+
+def test_chat_action_approval_executes_and_updates_history():
+    import olivaw.web as web
+
+    client.post("/chat", data={"prompt": "Refresh the health review."})
+    response = client.post(
+        "/chat/actions/approve",
+        data={
+            "action_id": "refresh_health_review",
+            "prompt": "Refresh the health review.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Action executed." in response.text
+    assert "Action Result" in response.text
+    assert "Last action: Refresh Health Review" in response.text
+    assert web._ACTION_HISTORY.last_result is not None
+    assert web._ACTION_HISTORY.last_result.message.startswith("Health Review refresh")
+    assert web._ACTION_HISTORY.approved_at is not None
+    assert web._ACTION_HISTORY.executed_at is not None
+
+
+def test_chat_page_renders_available_actions_panel():
+    response = client.get("/chat")
+
+    assert response.status_code == 200
+    assert "Available Actions" in response.text
+    assert "Refresh Sources" in response.text
+    assert "Operator initiated" in response.text
 
 
 def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
