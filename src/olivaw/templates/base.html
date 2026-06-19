@@ -686,6 +686,60 @@
         flex-wrap: wrap;
         gap: 8px;
       }
+      .operator-actions {
+        display: grid;
+        gap: 12px;
+      }
+      .operator-actions form {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 12px;
+      }
+      .operator-actions form:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+      .operator-actions button {
+        margin-top: 0;
+        width: 100%;
+      }
+      .operator-actions .meta-text,
+      .operator-actions .action-helper {
+        margin-top: 7px;
+      }
+      .action-helper {
+        color: #ffc56f;
+        font-size: 13px;
+        margin-bottom: 0;
+      }
+      .action-result {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        margin-top: 14px;
+        padding: 12px;
+      }
+      .action-result p {
+        margin-bottom: 8px;
+      }
+      .action-source-list {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr;
+        margin: 12px 0 0;
+      }
+      .action-source-list div {
+        display: grid;
+        gap: 2px;
+      }
+      .action-source-list dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 750;
+        text-transform: uppercase;
+      }
+      .action-source-list dd {
+        color: var(--ink);
+        font-size: 13px;
+      }
       @media (max-width: 780px) {
         header {
           border-bottom: 1px solid var(--line);

@@ -131,6 +131,51 @@
       </div>
 
       <aside class="ops-side">
+        <section class="ops-card actions-panel">
+          <div class="section-heading">
+            <h2>Actions</h2>
+            <span class="card-label">Operator initiated</span>
+          </div>
+          <div class="operator-actions">
+            {% for action in actions.available %}
+              <form method="post" action="/actions/execute">
+                <input type="hidden" name="action_id" value="{{ action.action_id }}">
+                <button type="submit">{{ action.label }}</button>
+                <p class="meta-text">{{ action.description }}</p>
+                {% if action.helper %}
+                  <p class="action-helper">{{ action.helper }}</p>
+                {% endif %}
+              </form>
+            {% endfor %}
+          </div>
+          {% if actions.last_result %}
+            <div class="action-result tone-{% if actions.last_result.success %}healthy{% else %}action{% endif %}">
+              <p class="card-label">Action Result</p>
+              <p>{{ actions.last_result.message }}</p>
+              {% if actions.last_result.metadata.href %}
+                <a class="button-link compact-link" href="{{ actions.last_result.metadata.href }}">
+                  {{ actions.last_result.metadata.label or "Open result" }}
+                </a>
+              {% endif %}
+              {% if actions.last_result.metadata.sources %}
+                <dl class="action-source-list">
+                  {% for source in actions.last_result.metadata.sources %}
+                    <div>
+                      <dt>{{ source.source_name or source.source_id }}</dt>
+                      <dd>{{ source.source_id }}; {{ source.status }}{% if source.freshness %}; {{ source.freshness }}{% endif %}</dd>
+                    </div>
+                  {% endfor %}
+                </dl>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if actions.history.last_action %}
+            <p class="source-footnote">
+              Last action: {{ actions.history.last_action.action_id | replace("_", " ") | title }}{% if actions.last_run_display %}; {{ actions.last_run_display }}{% endif %}.
+            </p>
+          {% endif %}
+        </section>
+
         <section class="ops-card">
           <h2>Source Freshness</h2>
           <dl class="freshness-list">

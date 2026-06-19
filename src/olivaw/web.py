@@ -12,6 +12,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from olivaw.actions import (
+    ActionExecutionContext,
+    ActionHistory,
+    ActionRequest,
+    create_builtin_action_registry,
+    execute_action,
+)
 from olivaw.briefing import compose_briefing, compose_source_briefing
 from olivaw.briefing.health_review import generate_health_review
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
@@ -52,6 +59,8 @@ class HealthReviewCacheEntry:
 
 
 _HEALTH_REVIEW_CACHE: HealthReviewCacheEntry | None = None
+_ACTION_REGISTRY = create_builtin_action_registry()
+_ACTION_HISTORY = ActionHistory()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -60,6 +69,11 @@ def home(request: Request):
     health = run_health_checks(config)
     briefing, dashboard, generated_at = _source_backed_dashboard(config)
     overview = _overview_context(dashboard, health)
+    action_view = _action_view(
+        config,
+        dashboard,
+        show_result=_show_action_result(request),
+    )
     return templates.TemplateResponse(
         request,
         "home.html",
@@ -67,6 +81,7 @@ def home(request: Request):
             "briefing": briefing,
             "dashboard": dashboard,
             "overview": overview,
+            "actions": action_view,
             "generated_at": generated_at,
             "health": health,
             "config": public_config(config),
@@ -115,15 +130,179 @@ def briefing_page(request: Request):
 
 @app.post("/health-review/refresh")
 def refresh_health_review(request: FastAPIRequest):
+    _execute_web_action("refresh_health_review")
+    redirect_to = _safe_redirect(request.headers.get("referer") or "/")
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/actions/execute")
+def execute_action_request(
+    request: FastAPIRequest,
+    action_id: str = Form(...),
+):
+    _execute_web_action(action_id)
+    redirect_to = _safe_redirect(request.headers.get("referer") or "/")
+    separator = "&" if "?" in redirect_to else "?"
+    return RedirectResponse(f"{redirect_to}{separator}action_result=1", status_code=303)
+
+
+def _execute_web_action(action_id: str):
     config = load_config()
-    _source_backed_dashboard(config, refresh_health_review=True)
-    redirect_to = request.headers.get("referer") or "/"
+    request = ActionRequest(action_id=action_id)
+    return execute_action(
+        _ACTION_REGISTRY,
+        request,
+        _action_execution_context(config),
+        history=_ACTION_HISTORY,
+    )
+
+
+def _safe_redirect(redirect_to: str) -> str:
     parsed = urlparse(redirect_to)
     if parsed.netloc:
         redirect_to = parsed.path or "/"
         if parsed.query:
             redirect_to = f"{redirect_to}?{parsed.query}"
-    return RedirectResponse(redirect_to, status_code=303)
+    return redirect_to
+
+
+def _action_execution_context(config: OlivawConfig) -> ActionExecutionContext:
+    def refresh_review() -> dict[str, object]:
+        _, dashboard, _ = _source_backed_dashboard(config, refresh_health_review=True)
+        health_review = dashboard.get("health_review")
+        return {
+            "status": getattr(health_review, "status", "unknown"),
+            "provider": getattr(health_review, "provider", ""),
+            "model": getattr(health_review, "model", ""),
+            "cache_state": getattr(health_review, "cache_state", ""),
+        }
+
+    def refresh_sources() -> dict[str, object]:
+        _, dashboard, generated_at = _source_backed_dashboard(config)
+        aggregate = dashboard.get("source_aggregate")
+        sources = (
+            _dict_list(aggregate.get("sources"))
+            if isinstance(aggregate, dict)
+            else []
+        )
+        return _source_status_summary(sources) | {"generated_at": generated_at}
+
+    def source_diagnostics() -> dict[str, object]:
+        registry = create_default_registry(config)
+        aggregate = registry.aggregate().as_dict()
+        sources = _dict_list(aggregate.get("sources"))
+        diagnostics = _dict_list(aggregate.get("diagnostics"))
+        return _source_status_summary(sources) | {"diagnostics": diagnostics}
+
+    def evidence_package() -> dict[str, object]:
+        _, dashboard, _ = _source_backed_dashboard(config)
+        actions = dashboard.get("investigation_actions")
+        primary = (
+            _dict_list(actions.get("primary"))
+            if isinstance(actions, dict)
+            else []
+        )
+        for action in primary:
+            if action.get("label") == "Open Evidence Package":
+                return action
+        return {
+            "label": "Open Evidence Package",
+            "href": "",
+            "unavailable_reason": "No existing evidence package link is available.",
+        }
+
+    return ActionExecutionContext(
+        config=config,
+        refresh_health_review=refresh_review,
+        refresh_sources=refresh_sources,
+        source_diagnostics=source_diagnostics,
+        evidence_package=evidence_package,
+    )
+
+
+def _source_status_summary(sources: list[dict[str, object]]) -> dict[str, object]:
+    statuses: dict[str, int] = {}
+    for source in sources:
+        status = str(source.get("status") or "unknown")
+        statuses[status] = statuses.get(status, 0) + 1
+    return {
+        "source_count": len(sources),
+        "ok_count": statuses.get("ok", 0),
+        "statuses": statuses,
+        "sources": [
+            {
+                "source_id": str(source.get("source_id") or ""),
+                "source_name": str(source.get("source_name") or ""),
+                "status": str(source.get("status") or "unknown"),
+                "message": str(source.get("message") or ""),
+                "freshness": str(source.get("freshness") or ""),
+            }
+            for source in sources
+        ],
+    }
+
+
+def _action_view(
+    config: OlivawConfig,
+    dashboard: dict[str, object],
+    *,
+    show_result: bool,
+) -> dict[str, object]:
+    available_actions = [
+        definition.as_dict() | {"disabled": False, "helper": ""}
+        for definition in _ACTION_REGISTRY.list_actions()
+    ]
+    if not config.prime_observer.base_url:
+        available_actions = [
+            _prime_observer_action_disabled(action)
+            if action["action_id"] == "open_prime_observer"
+            else action
+            for action in available_actions
+        ]
+    if not _has_evidence_href(dashboard):
+        available_actions = [
+            {
+                **action,
+                "helper": "No HTTP-backed evidence link is available yet.",
+            }
+            if action["action_id"] == "open_evidence_package"
+            else action
+            for action in available_actions
+        ]
+    history = _ACTION_HISTORY.as_dict()
+    return {
+        "available": available_actions,
+        "history": history,
+        "last_result": history["last_result"] if show_result else None,
+        "last_action": history["last_action"] if show_result else None,
+        "last_run_display": _action_last_run_display(history.get("last_run")),
+    }
+
+
+def _prime_observer_action_disabled(action: dict[str, object]) -> dict[str, object]:
+    return {
+        **action,
+        "helper": "Configure a Prime Observer HTTP URL before opening it here.",
+    }
+
+
+def _has_evidence_href(dashboard: dict[str, object]) -> bool:
+    actions = dashboard.get("investigation_actions")
+    primary = _dict_list(actions.get("primary")) if isinstance(actions, dict) else []
+    return any(
+        action.get("label") == "Open Evidence Package" and action.get("href")
+        for action in primary
+    )
+
+
+def _show_action_result(request: Request) -> bool:
+    return request.query_params.get("action_result") == "1"
+
+
+def _action_last_run_display(value: object) -> str:
+    if not isinstance(value, datetime):
+        return ""
+    return _human_generated_time(value)
 
 
 def _source_backed_dashboard(

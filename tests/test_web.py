@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+from olivaw.actions import ActionHistory
 from olivaw.briefing.health_review import HealthReviewResult
 from olivaw.models import HealthReport, ProviderStatus
 from olivaw.web import (
@@ -25,6 +26,7 @@ WEATHER_PROMPT = "Hi could you tell me what the weather is in Phoenix az"
 def mock_health_checks(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("olivaw.web._HEALTH_REVIEW_CACHE", None)
+    monkeypatch.setattr("olivaw.web._ACTION_HISTORY", ActionHistory())
 
     def fake_health(config=None):
         return HealthReport(
@@ -72,6 +74,10 @@ def test_home_route_renders():
     assert "What Changed Recently" in response.text
     assert "Network Signal" in response.text
     assert "Open Evidence Package" in response.text
+    assert "Actions" in response.text
+    assert "Refresh Sources" in response.text
+    assert "Source Diagnostics" in response.text
+    assert "Operator initiated" in response.text
     assert 'href="/chat?prompt=How%20was%20the%20network%20overnight%3F"' in (
         response.text
     )
@@ -90,6 +96,63 @@ def test_home_route_does_not_generate_health_review_synchronously(monkeypatch):
 
     assert response.status_code == 200
     assert "Health review not generated yet." in response.text
+
+
+def test_home_route_does_not_create_action_request(monkeypatch):
+    import olivaw.web as web
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert web._ACTION_HISTORY.last_action is None
+    assert web._ACTION_HISTORY.last_result is None
+
+
+def test_action_execution_requires_explicit_post():
+    import olivaw.web as web
+
+    response = client.get("/actions/execute?action_id=refresh_sources")
+
+    assert response.status_code == 405
+    assert web._ACTION_HISTORY.last_action is None
+
+
+def test_actions_post_refresh_sources_displays_result():
+    response = client.post(
+        "/actions/execute",
+        data={"action_id": "refresh_sources"},
+        headers={"referer": "http://testserver/"},
+    )
+
+    assert response.status_code == 200
+    assert "Sources refreshed:" in response.text
+    assert "Last action: Refresh Sources" in response.text
+    assert "Action Result" in response.text
+
+
+def test_actions_post_source_diagnostics_displays_source_summary():
+    response = client.post(
+        "/actions/execute",
+        data={"action_id": "source_diagnostics"},
+        headers={"referer": "http://testserver/"},
+    )
+
+    assert response.status_code == 200
+    assert "Source diagnostics ready" in response.text
+    assert "Manual example source" in response.text
+    assert "manual" in response.text
+
+
+def test_invalid_action_request_is_audited_and_bounded():
+    response = client.post(
+        "/actions/execute",
+        data={"action_id": "missing"},
+        headers={"referer": "http://testserver/"},
+    )
+
+    assert response.status_code == 200
+    assert "Unknown action: missing" in response.text
+    assert "Action Result" in response.text
 
 
 def test_briefing_route_does_not_generate_health_review_synchronously(monkeypatch):
