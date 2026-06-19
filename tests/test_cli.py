@@ -391,7 +391,7 @@ def test_cli_brief_input_still_outputs_fixture_briefing(capsys):
     assert "Stabilize Olivaw v0 as a local-first assistant foundation." in captured.out
 
 
-def test_cli_chat_weather_request_uses_guardrails_without_provider(
+def test_cli_chat_weather_request_uses_weather_source_without_provider(
     monkeypatch, capsys
 ):
     class FailingRouter:
@@ -407,8 +407,8 @@ def test_cli_chat_weather_request_uses_guardrails_without_provider(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "do not currently have a weather source configured" in captured.out
-    assert "WeatherSource" in captured.out
+    assert "Weather:" in captured.out
+    assert "Rain chance" in captured.out
     assert "enable_openai_weather" not in captured.out
     assert "provide weather via cloud OpenAI provider support" not in captured.out
     assert "OpenAI can retrieve live weather" not in captured.out

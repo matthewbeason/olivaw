@@ -40,7 +40,7 @@
         left: 0;
         position: fixed;
         top: 0;
-        width: 232px;
+        width: 216px;
         z-index: 1;
       }
       nav {
@@ -55,9 +55,18 @@
       nav strong {
         color: var(--ink);
         display: block;
-        font-size: 17px;
+        font-size: 18px;
         letter-spacing: 0;
-        margin-bottom: 20px;
+        margin-bottom: 8px;
+      }
+      .nav-kicker {
+        color: var(--muted);
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        margin-bottom: 18px;
+        text-transform: uppercase;
       }
       nav a {
         border-radius: 8px;
@@ -70,7 +79,7 @@
         color: var(--ink);
         text-decoration: none;
       }
-      .nav-primary a:first-child {
+      nav a.active {
         background: rgba(139, 198, 183, 0.18);
         color: var(--ink);
       }
@@ -86,9 +95,9 @@
       a { color: var(--accent); text-decoration: none; }
       a:hover { text-decoration: underline; }
       main {
-        margin-left: 232px;
-        padding: 28px 28px 52px;
-        width: min(1440px, calc(100vw - 232px));
+        margin-left: 216px;
+        padding: 32px 32px 56px;
+        width: min(1480px, calc(100vw - 216px));
       }
       h1 {
         font-size: clamp(34px, 5vw, 54px);
@@ -773,6 +782,173 @@
       .chat-actions-panel {
         margin-top: 4px;
       }
+      .assistant-shell {
+        align-items: start;
+        display: grid;
+        gap: 22px;
+        grid-template-columns: minmax(0, 1fr) 320px;
+      }
+      .assistant-main {
+        display: grid;
+        gap: 18px;
+      }
+      .assistant-hero {
+        max-width: 720px;
+        padding-top: 8px;
+      }
+      .assistant-intro {
+        color: var(--ink);
+        font-size: clamp(20px, 2.4vw, 28px);
+        line-height: 1.2;
+        margin-bottom: 0;
+      }
+      .conversation-panel {
+        background:
+          linear-gradient(180deg, rgba(139, 198, 183, 0.08), rgba(23, 26, 22, 0.95) 22%),
+          rgba(23, 26, 22, 0.95);
+        min-height: 580px;
+        padding: 0;
+      }
+      .conversation-scroll {
+        display: grid;
+        gap: 14px;
+        min-height: 340px;
+        padding: 22px 22px 10px;
+      }
+      .assistant-empty-state {
+        align-content: center;
+        display: grid;
+        gap: 16px;
+        min-height: 300px;
+      }
+      .assistant-empty-copy {
+        color: var(--ink);
+        font-size: 18px;
+        line-height: 1.5;
+        margin: 0;
+        max-width: 620px;
+      }
+      .message-bubble {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        max-width: min(760px, 100%);
+        padding: 16px 18px;
+      }
+      .message-user {
+        background: rgba(139, 198, 183, 0.12);
+        justify-self: end;
+      }
+      .message-assistant {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .message-copy {
+        color: var(--ink);
+        font-size: 16px;
+        line-height: 1.55;
+        margin: 0;
+        white-space: pre-wrap;
+      }
+      .assistant-composer {
+        border-top: 1px solid var(--line);
+        gap: 14px;
+        padding: 18px 22px 22px;
+      }
+      .assistant-composer textarea {
+        background: rgba(12, 15, 12, 0.85);
+        border-radius: 18px;
+        min-height: 132px;
+        padding: 16px 18px;
+      }
+      .assistant-composer-actions {
+        align-items: flex-end;
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+      }
+      .assistant-composer-actions .prompt-list {
+        flex: 1;
+      }
+      .conversation-card-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      .context-card {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+      }
+      .context-card h2 {
+        margin-bottom: 0;
+      }
+      .context-card-head {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+      }
+      .context-card-summary {
+        color: var(--ink);
+        margin-bottom: 0;
+      }
+      .context-card-meta {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .context-card-meta div {
+        background: var(--soft-panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .context-card-meta dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .context-card-meta dd {
+        color: var(--ink);
+        font-weight: 650;
+        margin-top: 4px;
+      }
+      .compact-context-list {
+        gap: 8px;
+      }
+      .assistant-rail {
+        display: grid;
+        gap: 14px;
+        position: sticky;
+        top: 32px;
+      }
+      .utility-card {
+        background: rgba(23, 26, 22, 0.86);
+      }
+      .utility-links {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .utility-links a {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--ink);
+        display: grid;
+        gap: 2px;
+        padding: 10px 12px;
+      }
+      .utility-links a:hover {
+        background: rgba(139, 198, 183, 0.12);
+        text-decoration: none;
+      }
+      .utility-links small {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .compact-operator-actions form {
+        padding-bottom: 10px;
+      }
       @media (max-width: 780px) {
         header {
           border-bottom: 1px solid var(--line);
@@ -796,8 +972,18 @@
           width: auto;
         }
         main { padding-top: 24px; }
+        .assistant-shell,
         .ops-hero,
         .ops-grid {
+          grid-template-columns: 1fr;
+        }
+        .assistant-rail {
+          position: static;
+          top: auto;
+        }
+        .assistant-composer-actions,
+        .context-card-meta {
+          display: grid;
           grid-template-columns: 1fr;
         }
         .briefing-hero {
@@ -827,17 +1013,18 @@
     <header>
       <nav>
         <strong>Olivaw</strong>
+        <span class="nav-kicker">Utility Rail</span>
         <div class="nav-primary">
-          <a href="/">Overview</a>
-          <a href="/chat">Ask Olivaw</a>
-          <a href="/sources">Sources</a>
-          <a href="/settings">Settings</a>
+          <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Assistant</a>
+          <a href="/sources" class="{% if request.url.path == '/sources' %}active{% endif %}">Sources</a>
+          <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Settings</a>
+          <a href="/health" class="{% if request.url.path == '/health' %}active{% endif %}">Health</a>
         </div>
-        <div class="nav-secondary" aria-label="Compatibility links">
-          <a href="/briefing">Briefing</a>
-          <a href="/health">Health</a>
-          <a href="/capabilities">Capabilities</a>
-          <a href="/config">Config</a>
+        <div class="nav-secondary" aria-label="Secondary links">
+          <a href="/chat" class="{% if request.url.path == '/chat' %}active{% endif %}">Conversation</a>
+          <a href="/briefing" class="{% if request.url.path == '/briefing' %}active{% endif %}">Briefing</a>
+          <a href="/config" class="{% if request.url.path == '/config' %}active{% endif %}">Config</a>
+          <a href="/capabilities" class="{% if request.url.path == '/capabilities' %}active{% endif %}">Capabilities</a>
         </div>
       </nav>
     </header>

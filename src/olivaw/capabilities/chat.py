@@ -33,6 +33,7 @@ class ChatCapability:
     def run_with_attribution(
         self, prompt: str, config: OlivawConfig | None = None
     ) -> AttributedResponse:
+        resolved_config = config or load_config()
         if _is_capability_question(prompt):
             return AttributedResponse(
                 text=capabilities_summary(),
@@ -41,11 +42,14 @@ class ChatCapability:
                 capability="capability inspection",
             )
 
+        weather = _weather_response(prompt, resolved_config)
+        if weather is not None:
+            return weather
+
         missing = _missing_capability_for_prompt(prompt)
         if missing:
             return _capability_unavailable_response(missing)
 
-        resolved_config = config or load_config()
         if _is_source_question(prompt):
             return _source_status_response(resolved_config)
 
@@ -104,7 +108,6 @@ def _is_source_question(prompt: str) -> bool:
 def _missing_capability_for_prompt(prompt: str) -> str | None:
     normalized = " ".join(prompt.lower().split())
     unavailable_checks = (
-        ("weather source", ("weather", "forecast", "temperature")),
         ("calendar source", ("calendar", "schedule", "appointment", "meeting")),
         ("email source", ("email", "inbox", "mail")),
         ("reminder source", ("reminder", "remind me", "notification")),
@@ -117,6 +120,68 @@ def _missing_capability_for_prompt(prompt: str) -> str | None:
         if any(phrase in normalized for phrase in phrases):
             return capability
     return None
+
+
+def _weather_response(
+    prompt: str,
+    config: OlivawConfig,
+) -> AttributedResponse | None:
+    if not _is_weather_question(prompt):
+        return None
+    registry = create_default_registry(config)
+    aggregate = registry.aggregate().as_dict()
+    for source in _source_dicts(aggregate.get("sources")):
+        if source.get("source_id") != "weather":
+            continue
+        status = str(source.get("status") or "unknown")
+        if status == "ok":
+            summary = _weather_summary_text(source)
+            if summary:
+                location = str(source.get("source_name") or "Weather")
+                return AttributedResponse(
+                    text=f"{location}: {summary}",
+                    attribution=SOURCE_BACKED,
+                    sources=("weather",),
+                    capability="weather lookup",
+                )
+        message = str(source.get("message") or "").strip()
+        details = (
+            f" Weather source status: {message}."
+            if message
+            else " Weather source data is not available right now."
+        )
+        return AttributedResponse(
+            text=(
+                "I do not currently have weather context available from Olivaw sources yet."
+                f"{details}"
+            ),
+            attribution=CAPABILITY_UNAVAILABLE,
+            sources=("weather",),
+            capability="weather source",
+        )
+    return _capability_unavailable_response("weather source")
+
+
+def _is_weather_question(prompt: str) -> bool:
+    normalized = " ".join(prompt.lower().split())
+    return any(
+        phrase in normalized
+        for phrase in ("weather", "forecast", "temperature", "temp", "rain")
+    )
+
+
+def _source_dicts(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _weather_summary_text(source: dict[str, object]) -> str:
+    for item in _source_dicts(source.get("summary_items")):
+        summary = str(item.get("summary") or "").strip()
+        if summary:
+            return summary
+    return ""
 
 
 def _capability_unavailable_response(capability: str) -> AttributedResponse:
@@ -157,8 +222,7 @@ def _source_status_response(config: OlivawConfig) -> AttributedResponse:
     lines.extend(
         [
             "",
-            "Planned sources are not implemented yet: WeatherSource, "
-            "CalendarSource, EmailSource.",
+            "Planned sources are not implemented yet: CalendarSource, EmailSource.",
         ]
     )
     return AttributedResponse(

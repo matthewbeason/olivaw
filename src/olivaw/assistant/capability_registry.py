@@ -17,7 +17,6 @@ class CapabilityRegistry:
 
 
 PLANNED_SOURCES = (
-    "WeatherSource",
     "CalendarSource",
     "EmailSource",
 )
@@ -29,6 +28,7 @@ def create_capability_registry(
         "files",
         "prime_observer",
         "core_signal",
+        "weather",
     ),
 ) -> CapabilityRegistry:
     identity = get_identity()

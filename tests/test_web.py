@@ -67,23 +67,23 @@ def test_home_route_renders():
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Operations Center" in response.text
-    assert "Overview" in response.text
-    assert "Ask Olivaw" in response.text
-    assert "Source Freshness" in response.text
-    assert "What Changed Recently" in response.text
-    assert "Network Signal" in response.text
-    assert "Open Evidence Package" in response.text
-    assert "Actions" in response.text
+    assert "Good morning Matthew." in response.text
+    assert "How can I help?" in response.text
+    assert 'aria-label="Conversation"' in response.text
+    assert 'aria-label="Utility rail"' in response.text
+    assert "Quick actions" in response.text
     assert "Refresh Sources" in response.text
     assert "Source Diagnostics" in response.text
-    assert "Operator initiated" in response.text
-    assert 'href="/chat?prompt=How%20was%20the%20network%20overnight%3F"' in (
-        response.text
-    )
+    assert 'href="/?prompt=How%20was%20the%20network%20overnight%3F"' in response.text
     assert "Health review not generated yet." in response.text
-    assert "Event ID" not in response.text
-    assert "Raw briefing" not in response.text
+    assert "Operations Center" not in response.text
+    assert "Status Hero" not in response.text
+    assert "Source Freshness" not in response.text
+    assert "Recent Activity" not in response.text
+    assert "Network Signal" not in response.text
+    assert "Weather Summary" not in response.text
+    assert "Actions Card" not in response.text
+    assert 'data-card-kind="' not in response.text
 
 
 def test_home_route_does_not_generate_health_review_synchronously(monkeypatch):
@@ -143,8 +143,8 @@ def test_actions_post_source_diagnostics_displays_source_summary():
 
     assert response.status_code == 200
     assert "Source diagnostics ready" in response.text
-    assert "Manual example source" in response.text
-    assert "manual" in response.text
+    assert 'data-card-kind="diagnostics"' in response.text
+    assert "Manual example source (manual): ok" in response.text
 
 
 def test_invalid_action_request_is_audited_and_bounded():
@@ -227,10 +227,20 @@ def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path
         encoding="utf-8",
     )
 
-    response = client.get("/")
+    class FakeResponse:
+        text = "Network was healthy overall. Two slowdown periods were detected yesterday."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    response = client.post("/chat", data={"prompt": "How was the network overnight?"})
 
     assert response.status_code == 200
-    assert "Network Signal" in response.text
+    assert 'data-card-kind="network"' in response.text
+    assert 'data-card-kind="evidence"' in response.text
+    assert "Network" in response.text
     assert "Status" in response.text
     assert "Attribution" in response.text
     assert "Likely upstream (ISP / path)" in response.text
@@ -248,17 +258,15 @@ def test_home_navigation_simplifies_primary_routes():
 
     assert response.status_code == 200
     assert '<div class="nav-primary">' in response.text
-    assert '<a href="/">Overview</a>' in response.text
-    assert '<a href="/chat">Ask Olivaw</a>' in response.text
-    assert '<a href="/sources">Sources</a>' in response.text
-    assert '<a href="/settings">Settings</a>' in response.text
-    assert '<div class="nav-secondary" aria-label="Compatibility links">' in (
-        response.text
-    )
-    assert '<a href="/briefing">Briefing</a>' in response.text
-    assert '<a href="/health">Health</a>' in response.text
-    assert '<a href="/capabilities">Capabilities</a>' in response.text
-    assert '<a href="/config">Config</a>' in response.text
+    assert ">Assistant</a>" in response.text
+    assert 'href="/sources"' in response.text
+    assert 'href="/settings"' in response.text
+    assert '<a href="/health"' in response.text
+    assert '<div class="nav-secondary" aria-label="Secondary links">' in response.text
+    assert '<a href="/chat"' in response.text
+    assert 'href="/briefing"' in response.text
+    assert 'href="/capabilities"' in response.text
+    assert 'href="/config"' in response.text
 
 
 def test_templates_do_not_hot_reload_in_long_running_web_process():
@@ -274,8 +282,8 @@ def test_home_route_renders_from_non_repo_cwd(monkeypatch, tmp_path):
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Operations Center" in response.text
-    assert "Source Freshness" in response.text
+    assert "Good morning Matthew." in response.text
+    assert "How can I help?" in response.text
 
 
 def test_health_route_renders():
@@ -645,7 +653,7 @@ def test_briefing_route_renders_compact_weather_context(monkeypatch, tmp_path):
     assert response.text.count('class="disclosure-card"') == 1
 
 
-def test_home_route_renders_weather_card_when_available(monkeypatch, tmp_path):
+def test_chat_route_renders_weather_card_when_available(monkeypatch, tmp_path):
     for name in (
         "OLIVAW_CONFIG",
         "OLIVAW_FILES_DIR",
@@ -697,15 +705,23 @@ def test_home_route_renders_weather_card_when_available(monkeypatch, tmp_path):
         },
     )
 
-    response = client.get("/")
+    class FakeResponse:
+        text = "Phoenix is currently 72°F with a forecast high of 86°F."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    response = client.post("/chat", data={"prompt": "What's the weather today?"})
 
     assert response.status_code == 200
-    assert "<h3>Weather</h3>" in response.text
+    assert 'data-card-kind="weather"' in response.text
+    assert ">Weather</h2>" in response.text
     assert "Currently 72°F and clear. High 86°F, low 68°F. Rain chance 10%." in (
         response.text
     )
-    assert "Weather updated" in response.text
-    assert "Weather</dt>" in response.text
+    assert "Weather details are shown only when the request explicitly calls for them." in response.text
 
 
 def test_briefing_route_omits_weather_when_unavailable(monkeypatch, tmp_path):
@@ -762,8 +778,8 @@ def test_home_route_omits_weather_card_when_unavailable(monkeypatch, tmp_path):
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "<h3>Weather</h3>" not in response.text
-    assert "Weather source requires latitude and longitude." in response.text
+    assert 'data-card-kind="weather"' not in response.text
+    assert "Weather source requires latitude and longitude." not in response.text
 
 
 def test_briefing_route_renders_generated_health_review(monkeypatch, tmp_path):
@@ -2293,7 +2309,7 @@ def test_chat_post_creates_action_suggestion_without_executing(monkeypatch):
 
     assert response.status_code == 200
     assert "I can do that." in response.text
-    assert "Suggested Action" in response.text
+    assert 'data-card-kind="action"' in response.text
     assert "Refresh Health Review" in response.text
     assert "Run Action" in response.text
     assert web._ACTION_HISTORY.last_suggested_action is not None
@@ -2327,6 +2343,25 @@ def test_chat_post_unknown_request_continues_normal_chat(monkeypatch):
     assert "Suggested Action" not in response.text
 
 
+def test_assistant_page_does_not_persist_prior_conversation(monkeypatch):
+    class FakeResponse:
+        text = "transient chat response"
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    posted = client.post("/chat", data={"prompt": "hello"})
+    refreshed = client.get("/")
+
+    assert posted.status_code == 200
+    assert refreshed.status_code == 200
+    assert "transient chat response" not in refreshed.text
+    assert ">hello<" not in refreshed.text
+    assert 'data-card-kind="' not in refreshed.text
+
+
 def test_chat_action_approval_executes_and_updates_history():
     import olivaw.web as web
 
@@ -2353,7 +2388,7 @@ def test_chat_page_renders_available_actions_panel():
     response = client.get("/chat")
 
     assert response.status_code == 200
-    assert "Available Actions" in response.text
+    assert "Quick actions" in response.text
     assert "Refresh Sources" in response.text
     assert "Operator initiated" in response.text
 
@@ -2371,8 +2406,8 @@ def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
     response = client.post("/chat", data={"prompt": "What's the weather in Phoenix?"})
 
     assert response.status_code == 200
-    assert "do not currently have a weather source configured" in response.text
-    assert "WeatherSource" in response.text
+    assert "do not currently have weather context available" in response.text
+    assert "Weather source status" in response.text
 
 
 def test_chat_post_exact_weather_request_matches_cli_guardrails(monkeypatch):
@@ -2388,8 +2423,7 @@ def test_chat_post_exact_weather_request_matches_cli_guardrails(monkeypatch):
     response = client.post("/chat", data={"prompt": WEATHER_PROMPT})
 
     assert response.status_code == 200
-    assert "do not currently have a weather source configured" in response.text
-    assert "WeatherSource" in response.text
+    assert "do not currently have weather context available" in response.text
     assert "enable_openai_weather" not in response.text
     assert "provide weather via cloud OpenAI provider support" not in response.text
     assert "OpenAI can retrieve live weather" not in response.text

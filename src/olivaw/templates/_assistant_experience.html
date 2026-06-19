@@ -1,0 +1,128 @@
+<div class="assistant-shell">
+  <section class="assistant-main">
+    <div class="assistant-hero">
+      <p class="eyebrow">Assistant</p>
+      <h1>{{ greeting }}</h1>
+      <p class="assistant-intro">{{ intro }}</p>
+    </div>
+
+    <section class="ops-card conversation-panel" aria-label="Conversation">
+      <div class="conversation-scroll">
+        {% if prompt or response or suggested_action or action_result %}
+          {% if prompt %}
+            <article class="message-bubble message-user">
+              <p class="card-label">You</p>
+              <p class="message-copy">{{ prompt }}</p>
+            </article>
+          {% endif %}
+
+          {% if response %}
+            <article class="message-bubble message-assistant">
+              <p class="card-label">Olivaw</p>
+              <p class="message-copy">{{ response }}</p>
+            </article>
+          {% endif %}
+        {% else %}
+          <div class="assistant-empty-state">
+            <p class="assistant-empty-copy">Ask for network context, evidence, weather, or a conversational action.</p>
+            <div class="prompt-list">
+              {% for suggestion in prompt_suggestions %}
+                <a class="prompt-chip" href="/?prompt={{ suggestion | urlencode }}">{{ suggestion }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+
+      <form class="chat-form assistant-composer" method="post" action="/chat">
+        <label for="prompt">Message</label>
+        <textarea id="prompt" name="prompt" placeholder="Ask Olivaw for source-backed help.">{{ prompt }}</textarea>
+        <div class="assistant-composer-actions">
+          <div class="prompt-list">
+            {% for suggestion in prompt_suggestions %}
+              <a class="prompt-chip" href="/?prompt={{ suggestion | urlencode }}">{{ suggestion }}</a>
+            {% endfor %}
+          </div>
+          <button type="submit">Send</button>
+        </div>
+      </form>
+    </section>
+
+    {% if context_cards %}
+      <section class="conversation-card-grid" aria-label="Relevant context">
+        {% for card in context_cards %}
+          {% with card=card, prompt=prompt %}
+            {% include "_context_card.html" %}
+          {% endwith %}
+        {% endfor %}
+      </section>
+    {% endif %}
+  </section>
+
+  <aside class="assistant-rail" aria-label="Utility rail">
+    <section class="ops-card utility-card tone-{{ utility.source_tone }}">
+      <p class="card-label">Utility</p>
+      <h2>Sources and controls</h2>
+      <p>{{ utility.source_summary }}</p>
+      <dl class="context-card-meta">
+        <div>
+          <dt>Sources</dt>
+          <dd>{{ utility.source_count }}</dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{{ dashboard.generated_display }}</dd>
+        </div>
+      </dl>
+      <div class="utility-links">
+        {% for link in utility.links %}
+          <a href="{{ link.href }}">
+            <span>{{ link.label }}</span>
+            <small>{{ link.detail }}</small>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="ops-card utility-card">
+      <p class="card-label">Health</p>
+      <h2>Local model</h2>
+      <p>{{ utility.local_model_summary }}</p>
+      <dl class="context-card-meta">
+        <div>
+          <dt>Status</dt>
+          <dd>{{ utility.local_model_status }}</dd>
+        </div>
+        <div>
+          <dt>Model</dt>
+          <dd>{{ utility.local_model_name }}</dd>
+        </div>
+      </dl>
+      <p class="source-footnote">Health Review: {{ utility.health_review_status }}. {{ utility.health_review_summary }}</p>
+    </section>
+
+    <section class="ops-card utility-card">
+      <div class="section-heading">
+        <h2>Quick actions</h2>
+        <span class="card-label">Operator initiated</span>
+      </div>
+      <div class="operator-actions compact-operator-actions">
+        {% for action in actions.available %}
+          <form method="post" action="/actions/execute">
+            <input type="hidden" name="action_id" value="{{ action.action_id }}">
+            <button type="submit">{{ action.label }}</button>
+            <p class="meta-text">{{ action.description }}</p>
+            {% if action.helper %}
+              <p class="action-helper">{{ action.helper }}</p>
+            {% endif %}
+          </form>
+        {% endfor %}
+      </div>
+      {% if action_result %}
+        <p class="source-footnote">
+          Last action: {{ last_action.action_id | replace("_", " ") | title }}{% if last_run_display %}; {{ last_run_display }}{% endif %}.
+        </p>
+      {% endif %}
+    </section>
+  </aside>
+</div>

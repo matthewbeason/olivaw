@@ -39,12 +39,13 @@ def test_capability_registry_tracks_current_and_planned_sources():
         "files",
         "prime_observer",
         "core_signal",
+        "weather",
     )
     assert registry.has_source("files") is True
     assert registry.has_source("prime_observer") is True
     assert registry.has_source("core_signal") is True
-    assert registry.has_source("weather") is False
-    assert "WeatherSource" in registry.planned_sources
+    assert registry.has_source("weather") is True
+    assert "WeatherSource" not in registry.planned_sources
     assert "PrimeObserverSource" not in registry.planned_sources
     assert "CoreSignalSource" not in registry.planned_sources
     assert "persistent memory" in registry.planned_capabilities

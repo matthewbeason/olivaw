@@ -1,0 +1,57 @@
+<article class="ops-card context-card tone-{{ card.tone or 'muted' }}" data-card-kind="{{ card.kind }}">
+  <div class="context-card-head">
+    <p class="card-label">{{ card.label }}</p>
+  </div>
+  <h2>{{ card.title }}</h2>
+  {% if card.summary %}
+    <p class="context-card-summary">{{ card.summary }}</p>
+  {% endif %}
+  {% if card.meta_rows %}
+    <dl class="context-card-meta">
+      {% for row in card.meta_rows %}
+        <div>
+          <dt>{{ row.label }}</dt>
+          <dd>{{ row.value }}</dd>
+        </div>
+      {% endfor %}
+    </dl>
+  {% endif %}
+  {% if card.details %}
+    <ul class="clean-list compact-context-list">
+      {% for item in card.details %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if card.links %}
+    <ul class="clean-list action-list compact-action-list">
+      {% for link in card.links %}
+        <li>
+          {% if link.href %}
+            <a href="{{ link.href }}">{{ link.label }}</a>
+          {% else %}
+            <span class="unavailable-action">{{ link.label }}</span>
+          {% endif %}
+          {% if link.detail %}<span>{{ link.detail }}</span>{% endif %}
+          {% if link.unavailable_reason %}<span class="action-helper">{{ link.unavailable_reason }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if card.helper %}
+    <p class="action-helper">{{ card.helper }}</p>
+  {% endif %}
+  {% if card.approval_action_id %}
+    <form method="post" action="/chat/actions/approve">
+      <input type="hidden" name="action_id" value="{{ card.approval_action_id }}">
+      <input type="hidden" name="prompt" value="{{ card.prompt }}">
+      <button type="submit">{{ card.button_label or "Run Action" }}</button>
+    </form>
+  {% endif %}
+  {% if card.cta_href %}
+    <a class="button-link compact-link" href="{{ card.cta_href }}">{{ card.cta_label or "Open result" }}</a>
+  {% endif %}
+  {% if card.source_note %}
+    <p class="source-footnote">{{ card.source_note }}</p>
+  {% endif %}
+</article>

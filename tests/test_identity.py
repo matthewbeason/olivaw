@@ -21,6 +21,8 @@ def test_identity_contains_current_implemented_capabilities():
     assert "source-backed briefing generation" in identity.implemented_capabilities
     assert "PrimeObserverSource" in identity.implemented_capabilities
     assert "CoreSignalSource" in identity.implemented_capabilities
+    assert "weather lookup" in identity.implemented_capabilities
+    assert "WeatherSource" in identity.implemented_capabilities
 
 
 def test_identity_contains_not_yet_implemented_capabilities():
@@ -29,7 +31,6 @@ def test_identity_contains_not_yet_implemented_capabilities():
     assert "persistent memory" in identity.not_yet_implemented_capabilities
     assert "calendar integration" in identity.not_yet_implemented_capabilities
     assert "email integration" in identity.not_yet_implemented_capabilities
-    assert "weather lookup" in identity.not_yet_implemented_capabilities
     assert "Source aggregation" in identity.not_yet_implemented_capabilities
     assert "desktop automation" in identity.not_yet_implemented_capabilities
 
@@ -43,6 +44,6 @@ def test_capabilities_summary_separates_current_from_roadmap():
     assert "file inspection" in implemented
     assert "source-backed briefing generation" in implemented
     assert "calendar integration" not in implemented
-    assert "weather lookup" not in implemented
+    assert "weather lookup" in implemented
     assert "calendar integration" in not_implemented
-    assert "weather lookup" in not_implemented
+    assert "weather lookup" not in not_implemented

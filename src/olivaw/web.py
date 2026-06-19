@@ -67,27 +67,14 @@ _INTENT_RESOLVER = IntentResolver(_ACTION_REGISTRY)
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    config = load_config()
-    health = run_health_checks(config)
-    briefing, dashboard, generated_at = _source_backed_dashboard(config)
-    overview = _overview_context(dashboard, health)
-    action_view = _action_view(
-        config,
-        dashboard,
-        show_result=_show_action_result(request),
-    )
     return templates.TemplateResponse(
         request,
         "home.html",
-        {
-            "briefing": briefing,
-            "dashboard": dashboard,
-            "overview": overview,
-            "actions": action_view,
-            "generated_at": generated_at,
-            "health": health,
-            "config": public_config(config),
-        },
+        _assistant_template_context(
+            request=request,
+            prompt=request.query_params.get("prompt", ""),
+            show_action_result=_show_action_result(request),
+        ),
     )
 
 
@@ -96,7 +83,8 @@ def chat_page(request: Request):
     return templates.TemplateResponse(
         request,
         "chat.html",
-        _chat_template_context(
+        _assistant_template_context(
+            request=request,
             prompt=request.query_params.get("prompt", ""),
         ),
     )
@@ -111,11 +99,11 @@ def chat_submit(request: Request, prompt: str = Form(...)):
         return templates.TemplateResponse(
             request,
             "chat.html",
-            _chat_template_context(
+            _assistant_template_context(
+                request=request,
                 prompt=prompt,
                 response="I can do that.",
                 suggested_action=suggestion,
-                suggestion_message="Suggested action:",
             ),
         )
 
@@ -123,7 +111,7 @@ def chat_submit(request: Request, prompt: str = Form(...)):
     return templates.TemplateResponse(
         request,
         "chat.html",
-        _chat_template_context(prompt=prompt, response=response),
+        _assistant_template_context(request=request, prompt=prompt, response=response),
     )
 
 
@@ -137,7 +125,8 @@ def approve_chat_action(
     return templates.TemplateResponse(
         request,
         "chat.html",
-        _chat_template_context(
+        _assistant_template_context(
+            request=request,
             prompt=prompt,
             response="Action executed.",
             action_result=result,
@@ -323,26 +312,368 @@ def _action_last_run_display(value: object) -> str:
     return _human_generated_time(value)
 
 
-def _chat_template_context(
+def _assistant_template_context(
     *,
+    request: Request,
     prompt: str,
     response: str | None = None,
     suggested_action: dict[str, object] | None = None,
-    suggestion_message: str | None = None,
     action_result: object | None = None,
+    show_action_result: bool = False,
 ) -> dict[str, object]:
     config = load_config()
-    _, dashboard, _ = _source_backed_dashboard(config)
+    _, dashboard, generated_at = _source_backed_dashboard(config)
+    health = run_health_checks(config)
+    action_view = _action_view(config, dashboard, show_result=show_action_result)
     history = _action_history_view()
+    displayed_result = action_result or action_view.get("last_result")
+    utility = _assistant_utility_rail(
+        dashboard=dashboard,
+        health=health,
+        actions=action_view["available"],
+        generated_at=generated_at,
+    )
     return {
+        "greeting": "Good morning Matthew.",
+        "intro": "How can I help?",
         "prompt": prompt,
         "response": response,
         "suggested_action": suggested_action,
-        "suggestion_message": suggestion_message,
-        "action_result": action_result,
-        "actions": _action_view(config, dashboard, show_result=False),
-        "last_action": history["last_action"],
-        "last_run_display": history["last_run_display"],
+        "action_result": displayed_result,
+        "actions": action_view,
+        "last_action": history["last_action"] if displayed_result else None,
+        "last_run_display": history["last_run_display"] if displayed_result else "",
+        "context_cards": _assistant_context_cards(
+            prompt=prompt,
+            response=response,
+            dashboard=dashboard,
+            suggested_action=suggested_action,
+            action_result=displayed_result,
+        ),
+        "prompt_suggestions": _assistant_prompt_suggestions(),
+        "utility": utility,
+        "dashboard": dashboard,
+        "health": health,
+        "generated_at": generated_at,
+        "config": public_config(config),
+        "is_home": request.url.path == "/",
+    }
+
+
+def _assistant_prompt_suggestions() -> list[str]:
+    return [
+        "How was the network overnight?",
+        "What changed recently?",
+        "Show me the evidence package.",
+        "Refresh the health review.",
+        "What's the weather today?",
+    ]
+
+
+def _assistant_utility_rail(
+    *,
+    dashboard: dict[str, object],
+    health: HealthReport,
+    actions: list[dict[str, object]],
+    generated_at: str,
+) -> dict[str, object]:
+    source_aggregate = dashboard.get("source_aggregate")
+    sources = (
+        _dict_list(source_aggregate.get("sources"))
+        if isinstance(source_aggregate, dict)
+        else []
+    )
+    health_review = dashboard.get("health_review")
+    review_status = getattr(health_review, "status", "unknown")
+    review_summary_parts = [
+        str(getattr(health_review, "text", "")).strip(),
+        str(getattr(health_review, "reason", "")).strip(),
+    ]
+    review_summary = ". ".join(part for part in review_summary_parts if part) or review_status
+    return {
+        "links": [
+            {"href": "/sources", "label": "Sources", "detail": "Registered source diagnostics"},
+            {"href": "/settings", "label": "Settings", "detail": "Read-only runtime settings"},
+            {"href": "/health", "label": "Health", "detail": "Provider health checks"},
+            {"href": "/config", "label": "Configuration", "detail": "Redacted config view"},
+            {"href": "/briefing", "label": "Briefing", "detail": "Detailed evidence view"},
+        ],
+        "source_summary": _source_panel_summary(sources),
+        "source_tone": _source_panel_tone(sources),
+        "source_count": len(sources),
+        "health_review_status": review_status,
+        "health_review_summary": review_summary,
+        "local_model_status": health.local.state,
+        "local_model_summary": health.local.message,
+        "local_model_name": health.local.model or health.local.name,
+        "generated_at": generated_at,
+        "actions": actions,
+    }
+
+
+def _assistant_context_cards(
+    *,
+    prompt: str,
+    response: str | None,
+    dashboard: dict[str, object],
+    suggested_action: dict[str, object] | None,
+    action_result: object | None,
+) -> list[dict[str, object]]:
+    cards: list[dict[str, object]] = []
+    lower_prompt = prompt.lower()
+    lower_response = (response or "").lower()
+
+    if suggested_action is not None:
+        cards.append(_action_suggestion_context_card(suggested_action, prompt))
+
+    if action_result is not None:
+        cards.append(_action_result_context_card(action_result))
+        diagnostics = _diagnostics_context_card_from_result(action_result)
+        if diagnostics is not None:
+            cards.append(diagnostics)
+
+    if _assistant_mentions_weather(lower_prompt, lower_response):
+        weather = _weather_context_card(dashboard)
+        if weather is not None:
+            cards.append(weather)
+
+    if _assistant_mentions_network(lower_prompt, lower_response):
+        cards.append(_network_context_card(dashboard))
+        evidence = _evidence_context_card(dashboard)
+        if evidence is not None:
+            cards.append(evidence)
+    elif _assistant_mentions_evidence(lower_prompt, lower_response):
+        evidence = _evidence_context_card(dashboard)
+        if evidence is not None:
+            cards.append(evidence)
+
+    if _assistant_mentions_diagnostics(lower_prompt, lower_response):
+        cards.append(_diagnostics_context_card(dashboard))
+
+    deduped: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for card in cards:
+        key = (str(card.get("kind") or ""), str(card.get("title") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(card)
+    return deduped
+
+
+def _assistant_mentions_weather(prompt: str, response: str) -> bool:
+    return _contains_any(prompt, ("weather", "forecast", "temperature", "temp", "rain")) or _contains_any(
+        response,
+        ("weather", "forecast", "temperature", "rain chance"),
+    )
+
+
+def _assistant_mentions_network(prompt: str, response: str) -> bool:
+    return _contains_any(
+        prompt,
+        ("network", "slowdown", "overnight", "changed recently", "what changed"),
+    ) or _contains_any(
+        response,
+        ("network", "slowdown", "incident", "healthy overall"),
+    )
+
+
+def _assistant_mentions_evidence(prompt: str, response: str) -> bool:
+    return _contains_any(
+        prompt,
+        ("evidence", "package", "investigation", "telemetry"),
+    ) or _contains_any(
+        response,
+        ("evidence package", "telemetry", "investigation"),
+    )
+
+
+def _assistant_mentions_diagnostics(prompt: str, response: str) -> bool:
+    return _contains_any(prompt, ("diagnostics", "sources", "freshness")) or _contains_any(
+        response,
+        ("diagnostics", "sources refreshed", "source diagnostics"),
+    )
+
+
+def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
+def _action_suggestion_context_card(
+    action: dict[str, object],
+    prompt: str,
+) -> dict[str, object]:
+    return {
+        "kind": "action",
+        "label": "Action Card",
+        "title": str(action.get("label") or "Suggested Action"),
+        "tone": str(action.get("risk_level") or "muted"),
+        "summary": str(action.get("description") or ""),
+        "meta_rows": [
+            {"label": "Category", "value": str(action.get("category") or "").replace("_", " ").title()},
+            {"label": "Risk", "value": str(action.get("risk_level") or "").replace("_", " ").title()},
+        ],
+        "helper": str(action.get("helper") or ""),
+        "approval_action_id": str(action.get("action_id") or ""),
+        "prompt": prompt,
+        "button_label": "Run Action",
+        "source_note": "Conversational actions remain operator-controlled and require explicit approval.",
+    }
+
+
+def _action_result_context_card(result: object) -> dict[str, object]:
+    metadata = getattr(result, "metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    meta_rows = []
+    for label, key in (
+        ("Status", "status"),
+        ("Provider", "provider"),
+        ("Model", "model"),
+        ("Cache", "cache_state"),
+    ):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            meta_rows.append({"label": label, "value": value})
+    cta_href = str(metadata.get("href") or "").strip()
+    cta_label = str(metadata.get("label") or "Open result").strip()
+    return {
+        "kind": "action-result",
+        "label": "Action Card",
+        "title": "Action Result",
+        "tone": "healthy" if getattr(result, "success", False) else "action",
+        "summary": str(getattr(result, "message", "")),
+        "meta_rows": meta_rows,
+        "cta_href": cta_href,
+        "cta_label": cta_label,
+        "source_note": "Actions are executed only after explicit operator approval.",
+    }
+
+
+def _weather_context_card(dashboard: dict[str, object]) -> dict[str, object] | None:
+    weather = dashboard.get("weather_context")
+    if not isinstance(weather, dict) or not weather.get("summary"):
+        return None
+    return {
+        "kind": "weather",
+        "label": "Weather Card",
+        "title": "Weather",
+        "tone": "weather",
+        "summary": str(weather.get("summary") or ""),
+        "meta_rows": [
+            {
+                "label": "Updated",
+                "value": str(
+                    weather.get("freshness") or weather.get("observed_at") or "Available"
+                ),
+            }
+        ],
+        "source_note": "Weather details are shown only when the request explicitly calls for them.",
+    }
+
+
+def _network_context_card(dashboard: dict[str, object]) -> dict[str, object]:
+    signal = _network_signal(dashboard)
+    return {
+        "kind": "network",
+        "label": "Network Card",
+        "title": "Network",
+        "tone": str(signal.get("tone") or "healthy"),
+        "summary": str(signal.get("summary") or ""),
+        "meta_rows": [
+            {"label": item["label"], "value": item["value"]}
+            for item in _dict_list(signal.get("fields"))[:4]
+        ],
+        "source_note": "Network context is grounded in Prime Observer facts and Core Signal interpretation.",
+    }
+
+
+def _evidence_context_card(dashboard: dict[str, object]) -> dict[str, object] | None:
+    actions = dashboard.get("investigation_actions")
+    if not isinstance(actions, dict):
+        return None
+    links = [
+        {
+            "label": str(item.get("label") or "Reference"),
+            "href": str(item.get("href") or ""),
+            "detail": str(item.get("detail") or item.get("target") or ""),
+            "unavailable_reason": str(item.get("unavailable_reason") or ""),
+        }
+        for item in (
+            _dict_list(actions.get("primary"))[:1]
+            + _dict_list(actions.get("event_navigation"))[:2]
+            + _dict_list(actions.get("supporting"))[:2]
+        )
+    ]
+    if not links:
+        return None
+    return {
+        "kind": "evidence",
+        "label": "Evidence Card",
+        "title": "Evidence Package",
+        "tone": "watch",
+        "summary": "Source-backed evidence and navigation are available for deeper inspection.",
+        "details": [str(item) for item in _list_value(dashboard.get("what_we_know"))[:3]],
+        "links": links,
+        "source_note": (
+            "Evidence links come from Prime Observer, interpretation comes from Core Signal, "
+            "and presentation is by Olivaw."
+        ),
+    }
+
+
+def _diagnostics_context_card(dashboard: dict[str, object]) -> dict[str, object]:
+    source_aggregate = dashboard.get("source_aggregate")
+    sources = (
+        _dict_list(source_aggregate.get("sources"))
+        if isinstance(source_aggregate, dict)
+        else []
+    )
+    return {
+        "kind": "diagnostics",
+        "label": "Diagnostics Card",
+        "title": "Diagnostics",
+        "tone": _source_panel_tone(sources),
+        "summary": _source_panel_summary(sources),
+        "meta_rows": [
+            {"label": "Sources", "value": str(len(sources))},
+            {
+                "label": "Health Review",
+                "value": str(getattr(dashboard.get("health_review"), "status", "unknown")),
+            },
+        ],
+        "details": [
+            (
+                f"{source.get('source_name') or source.get('source_id')} "
+                f"({source.get('source_id')}): {source.get('status')}"
+            )
+            for source in sources[:4]
+        ],
+    }
+
+
+def _diagnostics_context_card_from_result(result: object) -> dict[str, object] | None:
+    metadata = getattr(result, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    sources = _dict_list(metadata.get("sources"))
+    if not sources:
+        return None
+    summary = str(getattr(result, "message", "")).strip() or "Source diagnostics are available."
+    return {
+        "kind": "diagnostics",
+        "label": "Diagnostics Card",
+        "title": "Diagnostics",
+        "tone": "healthy" if getattr(result, "success", False) else "action",
+        "summary": summary,
+        "details": [
+            (
+                f"{source.get('source_name') or source.get('source_id')} "
+                f"({source.get('source_id')}): {source.get('status')}"
+                f"{'; ' + str(source.get('freshness')) if source.get('freshness') else ''}"
+            )
+            for source in sources
+        ],
     }
 
 
