@@ -1,6 +1,23 @@
-<article class="ops-card context-card tone-{{ card.tone or 'muted' }}" data-card-kind="{{ card.kind }}">
+<article
+  class="ops-card context-card tone-{{ card.tone or 'muted' }}"
+  data-context-card
+  data-card-id="{{ card.card_id }}"
+  data-card-dismiss-key="{{ card.dismiss_key }}"
+  data-card-kind="{{ card.kind }}"
+  {% if card.auto_dismiss_seconds %}data-auto-dismiss-seconds="{{ card.auto_dismiss_seconds }}"{% endif %}
+>
   <div class="context-card-head">
     <p class="card-label">{{ card.label }}</p>
+    {% if card.dismissible is not sameas false %}
+      <button
+        class="context-card-dismiss"
+        type="button"
+        data-dismiss-card
+        aria-label="Dismiss {{ card.title }}"
+      >
+        <span aria-hidden="true">&times;</span>
+      </button>
+    {% endif %}
   </div>
   <h2>{{ card.title }}</h2>
   {% if card.summary %}

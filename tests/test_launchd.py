@@ -40,6 +40,7 @@ def test_launchd_plist_contains_expected_service_configuration():
 
 def test_launchd_helper_scripts_exist():
     assert Path("scripts/install_launch_agent.sh").exists()
+    assert Path("scripts/restart_launch_agent.sh").exists()
     assert Path("scripts/uninstall_launch_agent.sh").exists()
     assert Path("scripts/status_launch_agent.sh").exists()
 
@@ -67,3 +68,11 @@ def test_status_launch_agent_reports_configured_host_and_lan_url():
     assert "Local URL: http://127.0.0.1:${PORT}" in script
     assert "LAN URL example: http://home:${PORT}" in script
     assert "LAN mode exposes Olivaw" in script
+
+
+def test_restart_launch_agent_kickstarts_installed_service():
+    script = Path("scripts/restart_launch_agent.sh").read_text(encoding="utf-8")
+
+    assert 'TARGET_PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"' in script
+    assert 'launchctl kickstart -k "${DOMAIN}/${LABEL}"' in script
+    assert "Install it with: scripts/install_launch_agent.sh" in script

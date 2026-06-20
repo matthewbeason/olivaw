@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
+import hmac
 import hashlib
 import json
-from dataclasses import dataclass, replace
+import os
+import secrets
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Form, Request as FastAPIRequest
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -32,11 +36,41 @@ from olivaw.assistant.identity import get_identity
 from olivaw.sources.registry import create_default_registry
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
+TEMPLATE_AUTO_RELOAD_ENV = "OLIVAW_TEMPLATE_AUTO_RELOAD"
+
+
+def _template_auto_reload_enabled() -> bool:
+    value = os.environ.get(TEMPLATE_AUTO_RELOAD_ENV)
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _configure_template_environment() -> bool:
+    auto_reload = _template_auto_reload_enabled()
+    templates.env.auto_reload = auto_reload
+    if auto_reload and templates.env.cache is not None:
+        templates.env.cache.clear()
+    return auto_reload
+
+
+def _template_response(
+    request: Request,
+    template_name: str,
+    context: dict[str, object],
+) -> HTMLResponse:
+    auto_reload = _configure_template_environment()
+    response = templates.TemplateResponse(request, template_name, context)
+    if auto_reload:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
-templates.env.auto_reload = False
+_configure_template_environment()
 app = FastAPI(title="Olivaw", version="0.7.0")
 HEALTH_REVIEW_CACHE_TTL = timedelta(minutes=15)
+ASSISTANT_SESSION_TTL = timedelta(hours=12)
+ASSISTANT_SESSION_COOKIE = "olivaw_session"
 
 
 @dataclass(frozen=True)
@@ -63,75 +97,152 @@ _HEALTH_REVIEW_CACHE: HealthReviewCacheEntry | None = None
 _ACTION_REGISTRY = create_builtin_action_registry()
 _ACTION_HISTORY = ActionHistory()
 _INTENT_RESOLVER = IntentResolver(_ACTION_REGISTRY)
+_ASSISTANT_SESSION_SIGNING_KEY = secrets.token_bytes(32)
+_ASSISTANT_SESSIONS: dict[str, AssistantSessionState] = {}
+
+
+@dataclass
+class AssistantInteractionState:
+    prompt: str = ""
+    response: str | None = None
+    suggested_action: dict[str, object] | None = None
+    action_result: object | None = None
+    dismissed_card_keys: set[str] = field(default_factory=set)
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class AssistantSessionState:
+    history: ActionHistory = field(default_factory=ActionHistory)
+    interaction: AssistantInteractionState | None = None
+    last_seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse(
+    session_id, session_state, is_new = _assistant_session(request)
+    response = _template_response(
         request,
         "home.html",
-        _assistant_template_context(
+        {
+            **_assistant_template_context(
             request=request,
+            session_state=session_state,
             prompt=request.query_params.get("prompt", ""),
             show_action_result=_show_action_result(request),
-        ),
+            )
+        },
     )
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
 
 
 @app.get("/chat", response_class=HTMLResponse)
 def chat_page(request: Request):
-    return templates.TemplateResponse(
+    session_id, session_state, is_new = _assistant_session(request)
+    response = _template_response(
         request,
         "chat.html",
-        _assistant_template_context(
+        {
+            **_assistant_template_context(
             request=request,
+            session_state=session_state,
             prompt=request.query_params.get("prompt", ""),
-        ),
+            show_action_result=_show_action_result(request),
+            )
+        },
     )
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
 
 
 @app.post("/chat", response_class=HTMLResponse)
 def chat_submit(request: Request, prompt: str = Form(...)):
+    session_id, session_state, is_new = _assistant_session(request)
     suggestion = _resolve_action_suggestion(prompt)
     if suggestion is not None:
         suggestion_request = ActionRequest(action_id=str(suggestion["action_id"]))
+        session_state.history.record_suggestion(suggestion_request)
         _ACTION_HISTORY.record_suggestion(suggestion_request)
-        return templates.TemplateResponse(
+        _store_assistant_interaction(
+            session_state,
+            prompt=prompt,
+            response="I can do that.",
+            suggested_action=suggestion,
+        )
+        response = _template_response(
             request,
             "chat.html",
-            _assistant_template_context(
+            {
+                **_assistant_template_context(
                 request=request,
+                session_state=session_state,
                 prompt=prompt,
                 response="I can do that.",
                 suggested_action=suggestion,
-            ),
+                )
+            },
         )
+        _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+        return response
 
-    response = ChatCapability().run_with_attribution(prompt).text
-    return templates.TemplateResponse(
+    message = ChatCapability().run_with_attribution(prompt).text
+    _store_assistant_interaction(
+        session_state,
+        prompt=prompt,
+        response=message,
+    )
+    response = _template_response(
         request,
         "chat.html",
-        _assistant_template_context(request=request, prompt=prompt, response=response),
+        {
+            **_assistant_template_context(
+            request=request,
+            session_state=session_state,
+            prompt=prompt,
+            response=message,
+            )
+        },
     )
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
 
 
-@app.post("/chat/actions/approve", response_class=HTMLResponse)
+@app.get("/chat/actions/approve")
+def approve_chat_action_fallback(request: Request):
+    redirect_to = _redirect_with_params(
+        "/chat",
+        prompt=request.query_params.get("prompt", ""),
+    )
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/chat/actions/approve")
 def approve_chat_action(
-    request: Request,
+    request: FastAPIRequest,
     action_id: str = Form(...),
     prompt: str = Form(""),
 ):
-    result = _execute_web_action(action_id)
-    return templates.TemplateResponse(
-        request,
-        "chat.html",
-        _assistant_template_context(
-            request=request,
-            prompt=prompt,
-            response="Action executed.",
-            action_result=result,
-        ),
+    session_id, session_state, is_new = _assistant_session(request)
+    result = _execute_web_action(action_id, history=session_state.history)
+    _store_assistant_interaction(
+        session_state,
+        prompt=prompt,
+        response="Action executed.",
+        action_result=result,
     )
+    redirect_to = _safe_redirect(request.headers.get("referer") or "/chat")
+    response = RedirectResponse(
+        _redirect_with_params(
+            redirect_to,
+            prompt=prompt,
+            action_result="1",
+            action_response="1",
+        ),
+        status_code=303,
+    )
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
 
 
 @app.get("/briefing", response_class=HTMLResponse)
@@ -139,7 +250,7 @@ def briefing_page(request: Request):
     config = load_config()
     briefing, dashboard, generated_at = _source_backed_dashboard(config)
     overview = _overview_context(dashboard, run_health_checks(config))
-    response = templates.TemplateResponse(
+    response = _template_response(
         request,
         "briefing.html",
         {
@@ -156,9 +267,30 @@ def briefing_page(request: Request):
 
 @app.post("/health-review/refresh")
 def refresh_health_review(request: FastAPIRequest):
-    _execute_web_action("refresh_health_review")
-    redirect_to = _safe_redirect(request.headers.get("referer") or "/")
-    return RedirectResponse(redirect_to, status_code=303)
+    session_id, session_state, is_new = _assistant_session(request)
+    result = _execute_web_action("refresh_health_review", history=session_state.history)
+    _store_assistant_interaction(
+        session_state,
+        prompt="",
+        response="Action executed.",
+        action_result=result,
+    )
+    redirect_to = _safe_redirect(request.headers.get("referer") or "/briefing")
+    response = RedirectResponse(
+        _redirect_with_params(
+            redirect_to,
+            action_result="1",
+            action_response="1",
+        ),
+        status_code=303,
+    )
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
+
+
+@app.get("/health-review/refresh")
+def refresh_health_review_fallback():
+    return RedirectResponse("/briefing", status_code=303)
 
 
 @app.post("/actions/execute")
@@ -166,22 +298,66 @@ def execute_action_request(
     request: FastAPIRequest,
     action_id: str = Form(...),
 ):
-    _execute_web_action(action_id)
+    session_id, session_state, is_new = _assistant_session(request)
+    result = _execute_web_action(action_id, history=session_state.history)
+    _store_assistant_interaction(
+        session_state,
+        prompt="",
+        response="Action executed.",
+        action_result=result,
+    )
     redirect_to = _safe_redirect(request.headers.get("referer") or "/")
-    separator = "&" if "?" in redirect_to else "?"
-    return RedirectResponse(f"{redirect_to}{separator}action_result=1", status_code=303)
+    response = RedirectResponse(
+        _redirect_with_params(
+            redirect_to,
+            action_result="1",
+            action_response="1",
+        ),
+        status_code=303,
+    )
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
 
 
-def _execute_web_action(action_id: str):
+@app.get("/actions/execute")
+def execute_action_request_fallback():
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/assistant/cards/dismiss")
+def dismiss_assistant_card(
+    request: FastAPIRequest,
+    card_key: str = Form(...),
+):
+    session_id, session_state, is_new = _assistant_session(request)
+    _dismiss_assistant_card(session_state, card_key)
+    redirect_to = _safe_redirect(request.headers.get("referer") or "/")
+    response = RedirectResponse(redirect_to, status_code=303)
+    _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
+    return response
+
+
+@app.get("/assistant/cards/dismiss")
+def dismiss_assistant_card_fallback(request: Request):
+    redirect_to = _safe_redirect(request.headers.get("referer") or "/")
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+def _execute_web_action(action_id: str, *, history: ActionHistory | None = None):
     config = load_config()
     request = ActionRequest(action_id=action_id)
+    active_history = history or _ACTION_HISTORY
+    active_history.record_approval(request)
     _ACTION_HISTORY.record_approval(request)
-    return execute_action(
+    result = execute_action(
         _ACTION_REGISTRY,
         request,
         _action_execution_context(config),
-        history=_ACTION_HISTORY,
+        history=active_history,
     )
+    if active_history is not _ACTION_HISTORY:
+        _ACTION_HISTORY.record(request, result)
+    return result
 
 
 def _safe_redirect(redirect_to: str) -> str:
@@ -191,6 +367,116 @@ def _safe_redirect(redirect_to: str) -> str:
         if parsed.query:
             redirect_to = f"{redirect_to}?{parsed.query}"
     return redirect_to
+
+
+def _redirect_with_params(redirect_to: str, **params: str) -> str:
+    split = urlsplit(redirect_to)
+    query = dict(parse_qsl(split.query, keep_blank_values=True))
+    for key, value in params.items():
+        if value:
+            query[key] = value
+    encoded_query = urlencode(query)
+    return urlunsplit(
+        (
+            split.scheme,
+            split.netloc,
+            split.path or "/",
+            encoded_query,
+            split.fragment,
+        )
+    )
+
+
+def _assistant_session(
+    request: Request,
+) -> tuple[str, AssistantSessionState, bool]:
+    now = datetime.now(timezone.utc)
+    _prune_assistant_sessions(now)
+    token = request.cookies.get(ASSISTANT_SESSION_COOKIE, "")
+    session_id = _verified_session_id(token)
+    if session_id and session_id in _ASSISTANT_SESSIONS:
+        state = _ASSISTANT_SESSIONS[session_id]
+        state.last_seen_at = now
+        return session_id, state, False
+
+    session_id = secrets.token_urlsafe(18)
+    state = AssistantSessionState(last_seen_at=now)
+    _ASSISTANT_SESSIONS[session_id] = state
+    return session_id, state, True
+
+
+def _prune_assistant_sessions(now: datetime) -> None:
+    expires_before = now - ASSISTANT_SESSION_TTL
+    for session_id, state in list(_ASSISTANT_SESSIONS.items()):
+        if state.last_seen_at < expires_before:
+            del _ASSISTANT_SESSIONS[session_id]
+
+
+def _signed_session_id(session_id: str) -> str:
+    signature = hmac.new(
+        _ASSISTANT_SESSION_SIGNING_KEY,
+        session_id.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+    return f"{session_id}.{encoded_signature}"
+
+
+def _verified_session_id(token: str) -> str | None:
+    session_id, _, signature = token.partition(".")
+    if not session_id or not signature:
+        return None
+    expected = _signed_session_id(session_id).partition(".")[2]
+    if hmac.compare_digest(signature, expected):
+        return session_id
+    return None
+
+
+def _set_assistant_session_cookie(
+    response: HTMLResponse | RedirectResponse,
+    session_id: str,
+    *,
+    set_cookie: bool,
+) -> None:
+    if not set_cookie:
+        return
+    response.set_cookie(
+        ASSISTANT_SESSION_COOKIE,
+        _signed_session_id(session_id),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _store_assistant_interaction(
+    session_state: AssistantSessionState,
+    *,
+    prompt: str,
+    response: str | None = None,
+    suggested_action: dict[str, object] | None = None,
+    action_result: object | None = None,
+) -> None:
+    session_state.last_seen_at = datetime.now(timezone.utc)
+    session_state.interaction = AssistantInteractionState(
+        prompt=prompt,
+        response=response,
+        suggested_action=dict(suggested_action) if suggested_action is not None else None,
+        action_result=action_result,
+        dismissed_card_keys=set(),
+        updated_at=session_state.last_seen_at,
+    )
+
+
+def _dismiss_assistant_card(
+    session_state: AssistantSessionState,
+    card_key: str,
+) -> None:
+    normalized = card_key.strip().lower()
+    if not normalized or session_state.interaction is None:
+        return
+    session_state.last_seen_at = datetime.now(timezone.utc)
+    session_state.interaction.dismissed_card_keys.add(normalized)
 
 
 def _action_execution_context(config: OlivawConfig) -> ActionExecutionContext:
@@ -273,16 +559,17 @@ def _action_view(
     config: OlivawConfig,
     dashboard: dict[str, object],
     *,
+    history: ActionHistory,
     show_result: bool,
 ) -> dict[str, object]:
     available_actions = _available_actions(config, dashboard)
-    history = _action_history_view()
+    history_view = _action_history_view(history)
     return {
         "available": available_actions,
-        "history": history,
-        "last_result": history["last_result"] if show_result else None,
-        "last_action": history["last_action"] if show_result else None,
-        "last_run_display": _action_last_run_display(history.get("last_run")),
+        "history": history_view,
+        "last_result": history_view["last_result"] if show_result else None,
+        "last_action": history_view["last_action"] if show_result else None,
+        "last_run_display": _action_last_run_display(history_view.get("last_run")),
     }
 
 
@@ -315,6 +602,7 @@ def _action_last_run_display(value: object) -> str:
 def _assistant_template_context(
     *,
     request: Request,
+    session_state: AssistantSessionState,
     prompt: str,
     response: str | None = None,
     suggested_action: dict[str, object] | None = None,
@@ -324,9 +612,28 @@ def _assistant_template_context(
     config = load_config()
     _, dashboard, generated_at = _source_backed_dashboard(config)
     health = run_health_checks(config)
-    action_view = _action_view(config, dashboard, show_result=show_action_result)
-    history = _action_history_view()
-    displayed_result = action_result or action_view.get("last_result")
+    action_view = _action_view(
+        config,
+        dashboard,
+        history=session_state.history,
+        show_result=show_action_result,
+    )
+    history = _action_history_view(session_state.history)
+    interaction = session_state.interaction
+    prompt = prompt or (interaction.prompt if interaction is not None else "")
+    response = response if response is not None else (
+        interaction.response if interaction is not None else None
+    )
+    suggested_action = (
+        suggested_action
+        if suggested_action is not None
+        else interaction.suggested_action if interaction is not None else None
+    )
+    displayed_result = (
+        action_result
+        if action_result is not None
+        else interaction.action_result if interaction is not None else action_view.get("last_result")
+    )
     utility = _assistant_utility_rail(
         dashboard=dashboard,
         health=health,
@@ -335,7 +642,11 @@ def _assistant_template_context(
     )
     return {
         "greeting": "Good morning Matthew.",
-        "intro": "How can I help?",
+        "intro": "How can I help you today?",
+        "orb": _assistant_orb_state(
+            dashboard=dashboard,
+            action_result=action_result,
+        ),
         "prompt": prompt,
         "response": response,
         "suggested_action": suggested_action,
@@ -344,6 +655,7 @@ def _assistant_template_context(
         "last_action": history["last_action"] if displayed_result else None,
         "last_run_display": history["last_run_display"] if displayed_result else "",
         "context_cards": _assistant_context_cards(
+            session_state=session_state,
             prompt=prompt,
             response=response,
             dashboard=dashboard,
@@ -363,10 +675,10 @@ def _assistant_template_context(
 def _assistant_prompt_suggestions() -> list[str]:
     return [
         "How was the network overnight?",
-        "What changed recently?",
-        "Show me the evidence package.",
-        "Refresh the health review.",
+        "Anything important happened?",
         "What's the weather today?",
+        "What changed recently?",
+        "What should I know today?",
     ]
 
 
@@ -377,42 +689,25 @@ def _assistant_utility_rail(
     actions: list[dict[str, object]],
     generated_at: str,
 ) -> dict[str, object]:
-    source_aggregate = dashboard.get("source_aggregate")
-    sources = (
-        _dict_list(source_aggregate.get("sources"))
-        if isinstance(source_aggregate, dict)
-        else []
-    )
-    health_review = dashboard.get("health_review")
-    review_status = getattr(health_review, "status", "unknown")
-    review_summary_parts = [
-        str(getattr(health_review, "text", "")).strip(),
-        str(getattr(health_review, "reason", "")).strip(),
-    ]
-    review_summary = ". ".join(part for part in review_summary_parts if part) or review_status
     return {
         "links": [
-            {"href": "/sources", "label": "Sources", "detail": "Registered source diagnostics"},
-            {"href": "/settings", "label": "Settings", "detail": "Read-only runtime settings"},
-            {"href": "/health", "label": "Health", "detail": "Provider health checks"},
-            {"href": "/config", "label": "Configuration", "detail": "Redacted config view"},
-            {"href": "/briefing", "label": "Briefing", "detail": "Detailed evidence view"},
+            {"href": "/sources", "label": "Sources"},
+            {"href": "/settings", "label": "Settings"},
+            {"href": "/sources", "label": "Diagnostics"},
+            {"href": "/health", "label": "Health"},
+            {"href": "/config", "label": "Configuration"},
         ],
-        "source_summary": _source_panel_summary(sources),
-        "source_tone": _source_panel_tone(sources),
-        "source_count": len(sources),
-        "health_review_status": review_status,
-        "health_review_summary": review_summary,
-        "local_model_status": health.local.state,
-        "local_model_summary": health.local.message,
-        "local_model_name": health.local.model or health.local.name,
-        "generated_at": generated_at,
+        "available_count": 5,
         "actions": actions,
+        "generated_at": generated_at,
+        "health": health,
+        "dashboard": dashboard,
     }
 
 
 def _assistant_context_cards(
     *,
+    session_state: AssistantSessionState,
     prompt: str,
     response: str | None,
     dashboard: dict[str, object],
@@ -420,6 +715,14 @@ def _assistant_context_cards(
     action_result: object | None,
 ) -> list[dict[str, object]]:
     cards: list[dict[str, object]] = []
+    dismissed_keys = {
+        str(key).strip().lower()
+        for key in (
+            session_state.interaction.dismissed_card_keys
+            if session_state.interaction is not None
+            else set()
+        )
+    }
     lower_prompt = prompt.lower()
     lower_response = (response or "").lower()
 
@@ -453,12 +756,15 @@ def _assistant_context_cards(
     deduped: list[dict[str, object]] = []
     seen: set[tuple[str, str]] = set()
     for card in cards:
+        dismiss_key = str(card.get("dismiss_key") or "").strip().lower()
+        if dismiss_key and dismiss_key in dismissed_keys:
+            continue
         key = (str(card.get("kind") or ""), str(card.get("title") or ""))
         if key in seen:
             continue
         seen.add(key)
         deduped.append(card)
-    return deduped
+    return deduped[:3]
 
 
 def _assistant_mentions_weather(prompt: str, response: str) -> bool:
@@ -481,10 +787,18 @@ def _assistant_mentions_network(prompt: str, response: str) -> bool:
 def _assistant_mentions_evidence(prompt: str, response: str) -> bool:
     return _contains_any(
         prompt,
-        ("evidence", "package", "investigation", "telemetry"),
+        (
+            "evidence",
+            "package",
+            "investigation",
+            "telemetry",
+            "why does core signal",
+            "why core signal",
+            "why do you think",
+        ),
     ) or _contains_any(
         response,
-        ("evidence package", "telemetry", "investigation"),
+        ("evidence package", "telemetry", "investigation", "core signal thinks"),
     )
 
 
@@ -499,26 +813,63 @@ def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase in text for phrase in phrases)
 
 
+def _context_card(
+    kind: str,
+    title: str,
+    *,
+    label: str,
+    tone: str,
+    summary: str = "",
+    helper: str = "",
+    meta_rows: list[dict[str, str]] | None = None,
+    details: list[str] | None = None,
+    links: list[dict[str, str]] | None = None,
+    approval_action_id: str = "",
+    prompt: str = "",
+    button_label: str = "",
+    cta_href: str = "",
+    cta_label: str = "",
+    source_note: str = "",
+    dismissible: bool = True,
+    auto_dismiss_seconds: int | None = None,
+) -> dict[str, object]:
+    return {
+        "card_id": f"{kind}-{secrets.token_hex(4)}",
+        "dismiss_key": kind,
+        "kind": kind,
+        "label": label,
+        "title": title,
+        "tone": tone,
+        "summary": summary,
+        "helper": helper,
+        "meta_rows": meta_rows or [],
+        "details": details or [],
+        "links": links or [],
+        "approval_action_id": approval_action_id,
+        "prompt": prompt,
+        "button_label": button_label,
+        "cta_href": cta_href,
+        "cta_label": cta_label,
+        "source_note": source_note,
+        "dismissible": dismissible,
+        "auto_dismiss_seconds": auto_dismiss_seconds,
+    }
+
+
 def _action_suggestion_context_card(
     action: dict[str, object],
     prompt: str,
 ) -> dict[str, object]:
-    return {
-        "kind": "action",
-        "label": "Action Card",
-        "title": str(action.get("label") or "Suggested Action"),
-        "tone": str(action.get("risk_level") or "muted"),
-        "summary": str(action.get("description") or ""),
-        "meta_rows": [
-            {"label": "Category", "value": str(action.get("category") or "").replace("_", " ").title()},
-            {"label": "Risk", "value": str(action.get("risk_level") or "").replace("_", " ").title()},
-        ],
-        "helper": str(action.get("helper") or ""),
-        "approval_action_id": str(action.get("action_id") or ""),
-        "prompt": prompt,
-        "button_label": "Run Action",
-        "source_note": "Conversational actions remain operator-controlled and require explicit approval.",
-    }
+    return _context_card(
+        "action",
+        "I can do that.",
+        label="Action",
+        tone="muted",
+        helper=str(action.get("helper") or ""),
+        approval_action_id=str(action.get("action_id") or ""),
+        prompt=prompt,
+        button_label=_conversational_action_label(str(action.get("action_id") or "")),
+    )
 
 
 def _action_result_context_card(result: object) -> dict[str, object]:
@@ -537,30 +888,128 @@ def _action_result_context_card(result: object) -> dict[str, object]:
             meta_rows.append({"label": label, "value": value})
     cta_href = str(metadata.get("href") or "").strip()
     cta_label = str(metadata.get("label") or "Open result").strip()
-    return {
-        "kind": "action-result",
-        "label": "Action Card",
-        "title": "Action Result",
-        "tone": "healthy" if getattr(result, "success", False) else "action",
-        "summary": str(getattr(result, "message", "")),
-        "meta_rows": meta_rows,
-        "cta_href": cta_href,
-        "cta_label": cta_label,
-        "source_note": "Actions are executed only after explicit operator approval.",
+    return _context_card(
+        "action-result",
+        "Done",
+        label="Action",
+        tone="healthy" if getattr(result, "success", False) else "action",
+        summary=str(getattr(result, "message", "")),
+        meta_rows=meta_rows,
+        cta_href=cta_href,
+        cta_label=cta_label,
+        auto_dismiss_seconds=45 if getattr(result, "success", False) else None,
+    )
+
+
+def _conversational_action_label(action_id: str) -> str:
+    labels = {
+        "refresh_health_review": "Generate Health Review",
+        "refresh_sources": "Refresh Sources",
+        "open_evidence_package": "Open Evidence Package",
+        "open_prime_observer": "Open Prime Observer",
+        "source_diagnostics": "Show Diagnostics",
     }
+    return labels.get(action_id, "Continue")
+
+
+def _assistant_orb_state(
+    *,
+    dashboard: dict[str, object],
+    action_result: object | None = None,
+) -> dict[str, str | bool]:
+    if action_result is not None:
+        return {
+            "state": "working",
+            "label": "Working",
+            "description": "An action just ran using existing source-backed context.",
+            "animate": True,
+        }
+
+    source_aggregate = dashboard.get("source_aggregate")
+    sources = (
+        _dict_list(source_aggregate.get("sources"))
+        if isinstance(source_aggregate, dict)
+        else []
+    )
+    source_status = {
+        str(source.get("source_id") or ""): str(source.get("status") or "")
+        for source in sources
+    }
+    if _assistant_context_is_degraded(source_status):
+        return {
+            "state": "degraded",
+            "label": "Degraded Context",
+            "description": "Some key context is currently unavailable.",
+            "animate": False,
+        }
+
+    events = _dict_list(dashboard.get("core_signal_events"))
+    if _assistant_has_attention_condition(dashboard, events):
+        return {
+            "state": "attention",
+            "label": "Attention",
+            "description": "Current sources indicate an active condition worth attention.",
+            "animate": False,
+        }
+    if _assistant_has_notable_context(dashboard, events):
+        return {
+            "state": "notable",
+            "label": "Notable",
+            "description": "There is something new worth asking about.",
+            "animate": False,
+        }
+    return {
+        "state": "calm",
+        "label": "Calm",
+        "description": "Everything appears normal from the current source-backed context.",
+        "animate": False,
+    }
+
+
+def _assistant_context_is_degraded(source_status: dict[str, str]) -> bool:
+    key_sources = ("prime_observer", "core_signal")
+    degraded = {"error", "unavailable"}
+    return any(source_status.get(source_id) in degraded for source_id in key_sources)
+
+
+def _assistant_has_attention_condition(
+    dashboard: dict[str, object],
+    events: list[dict[str, object]],
+) -> bool:
+    if str(dashboard.get("status_label") or "").strip().lower() == "action needed":
+        return True
+    for event in events:
+        status = str(event.get("status") or "").strip().lower()
+        severity = str(event.get("severity") or "").strip().lower()
+        if status in {"attention", "action", "active"} or severity in {
+            "attention",
+            "action",
+            "critical",
+        }:
+            return True
+    return False
+
+
+def _assistant_has_notable_context(
+    dashboard: dict[str, object],
+    events: list[dict[str, object]],
+) -> bool:
+    if events:
+        return True
+    return str(dashboard.get("status_label") or "").strip().lower() == "watch"
 
 
 def _weather_context_card(dashboard: dict[str, object]) -> dict[str, object] | None:
     weather = dashboard.get("weather_context")
     if not isinstance(weather, dict) or not weather.get("summary"):
         return None
-    return {
-        "kind": "weather",
-        "label": "Weather Card",
-        "title": "Weather",
-        "tone": "weather",
-        "summary": str(weather.get("summary") or ""),
-        "meta_rows": [
+    return _context_card(
+        "weather",
+        "Weather",
+        label="Weather",
+        tone="weather",
+        summary=str(weather.get("summary") or ""),
+        meta_rows=[
             {
                 "label": "Updated",
                 "value": str(
@@ -568,24 +1017,25 @@ def _weather_context_card(dashboard: dict[str, object]) -> dict[str, object] | N
                 ),
             }
         ],
-        "source_note": "Weather details are shown only when the request explicitly calls for them.",
-    }
+        source_note="Weather details appear only when the current request calls for them.",
+        auto_dismiss_seconds=45,
+    )
 
 
 def _network_context_card(dashboard: dict[str, object]) -> dict[str, object]:
     signal = _network_signal(dashboard)
-    return {
-        "kind": "network",
-        "label": "Network Card",
-        "title": "Network",
-        "tone": str(signal.get("tone") or "healthy"),
-        "summary": str(signal.get("summary") or ""),
-        "meta_rows": [
+    return _context_card(
+        "network",
+        "Network",
+        label="Network",
+        tone=str(signal.get("tone") or "healthy"),
+        summary=str(signal.get("summary") or ""),
+        meta_rows=[
             {"label": item["label"], "value": item["value"]}
             for item in _dict_list(signal.get("fields"))[:4]
         ],
-        "source_note": "Network context is grounded in Prime Observer facts and Core Signal interpretation.",
-    }
+        source_note="Network context is grounded in Prime Observer facts and Core Signal interpretation.",
+    )
 
 
 def _evidence_context_card(dashboard: dict[str, object]) -> dict[str, object] | None:
@@ -607,19 +1057,19 @@ def _evidence_context_card(dashboard: dict[str, object]) -> dict[str, object] | 
     ]
     if not links:
         return None
-    return {
-        "kind": "evidence",
-        "label": "Evidence Card",
-        "title": "Evidence Package",
-        "tone": "watch",
-        "summary": "Source-backed evidence and navigation are available for deeper inspection.",
-        "details": [str(item) for item in _list_value(dashboard.get("what_we_know"))[:3]],
-        "links": links,
-        "source_note": (
+    return _context_card(
+        "evidence",
+        "Evidence",
+        label="Evidence",
+        tone="watch",
+        summary="Source-backed evidence and navigation are available for deeper inspection.",
+        details=[str(item) for item in _list_value(dashboard.get("what_we_know"))[:3]],
+        links=links,
+        source_note=(
             "Evidence links come from Prime Observer, interpretation comes from Core Signal, "
             "and presentation is by Olivaw."
         ),
-    }
+    )
 
 
 def _diagnostics_context_card(dashboard: dict[str, object]) -> dict[str, object]:
@@ -629,27 +1079,27 @@ def _diagnostics_context_card(dashboard: dict[str, object]) -> dict[str, object]
         if isinstance(source_aggregate, dict)
         else []
     )
-    return {
-        "kind": "diagnostics",
-        "label": "Diagnostics Card",
-        "title": "Diagnostics",
-        "tone": _source_panel_tone(sources),
-        "summary": _source_panel_summary(sources),
-        "meta_rows": [
+    return _context_card(
+        "diagnostics",
+        "Diagnostics",
+        label="Diagnostics",
+        tone=_source_panel_tone(sources),
+        summary=_source_panel_summary(sources),
+        meta_rows=[
             {"label": "Sources", "value": str(len(sources))},
             {
                 "label": "Health Review",
                 "value": str(getattr(dashboard.get("health_review"), "status", "unknown")),
             },
         ],
-        "details": [
+        details=[
             (
                 f"{source.get('source_name') or source.get('source_id')} "
                 f"({source.get('source_id')}): {source.get('status')}"
             )
             for source in sources[:4]
         ],
-    }
+    )
 
 
 def _diagnostics_context_card_from_result(result: object) -> dict[str, object] | None:
@@ -660,13 +1110,13 @@ def _diagnostics_context_card_from_result(result: object) -> dict[str, object] |
     if not sources:
         return None
     summary = str(getattr(result, "message", "")).strip() or "Source diagnostics are available."
-    return {
-        "kind": "diagnostics",
-        "label": "Diagnostics Card",
-        "title": "Diagnostics",
-        "tone": "healthy" if getattr(result, "success", False) else "action",
-        "summary": summary,
-        "details": [
+    return _context_card(
+        "diagnostics",
+        "Diagnostics",
+        label="Diagnostics",
+        tone="healthy" if getattr(result, "success", False) else "action",
+        summary=summary,
+        details=[
             (
                 f"{source.get('source_name') or source.get('source_id')} "
                 f"({source.get('source_id')}): {source.get('status')}"
@@ -674,7 +1124,7 @@ def _diagnostics_context_card_from_result(result: object) -> dict[str, object] |
             )
             for source in sources
         ],
-    }
+    )
 
 
 def _resolve_action_suggestion(prompt: str) -> dict[str, object] | None:
@@ -717,10 +1167,10 @@ def _available_actions(
     return available_actions
 
 
-def _action_history_view() -> dict[str, object]:
-    history = _ACTION_HISTORY.as_dict()
-    return history | {
-        "last_run_display": _action_last_run_display(history.get("last_run")),
+def _action_history_view(history: ActionHistory) -> dict[str, object]:
+    payload = history.as_dict()
+    return payload | {
+        "last_run_display": _action_last_run_display(payload.get("last_run")),
     }
 
 
@@ -2441,12 +2891,12 @@ def _clean_briefing_line(line: str) -> str:
 @app.get("/health", response_class=HTMLResponse)
 def health_page(request: Request):
     report = run_health_checks()
-    return templates.TemplateResponse(request, "health.html", {"health": report})
+    return _template_response(request, "health.html", {"health": report})
 
 
 @app.get("/capabilities", response_class=HTMLResponse)
 def capabilities_page(request: Request):
-    return templates.TemplateResponse(
+    return _template_response(
         request,
         "capabilities.html",
         {"identity": get_identity()},
@@ -2456,12 +2906,12 @@ def capabilities_page(request: Request):
 @app.get("/sources", response_class=HTMLResponse)
 def sources_page(request: Request):
     report = SourceInspectionCapability().run(config=load_config())
-    return templates.TemplateResponse(request, "sources.html", {"report": report})
+    return _template_response(request, "sources.html", {"report": report})
 
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
-    return templates.TemplateResponse(
+    return _template_response(
         request,
         "settings.html",
         {"config": public_config(load_config())},
@@ -2470,7 +2920,7 @@ def settings_page(request: Request):
 
 @app.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
-    return templates.TemplateResponse(
+    return _template_response(
         request,
         "config.html",
         {"config": public_config(load_config())},

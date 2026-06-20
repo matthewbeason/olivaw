@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -67,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
     web = subparsers.add_parser("web", help="Start the local web application.")
     web.add_argument("--host", default="127.0.0.1")
     web.add_argument("--port", type=int, default=8765)
+    subparsers.add_parser(
+        "restart-web",
+        help="Restart the macOS LaunchAgent that serves the local web application.",
+    )
 
     subparsers.add_parser("config", help="Print non-secret effective configuration.")
     return parser
@@ -154,6 +160,32 @@ def main(argv: list[str] | None = None) -> int:
             import uvicorn
 
             uvicorn.run("olivaw.web:app", host=args.host, port=args.port, reload=False)
+            return 0
+
+        if args.command == "restart-web":
+            if sys.platform != "darwin":
+                print("restart-web is only supported on macOS.", file=sys.stderr)
+                return 2
+            plist_path = Path.home() / "Library/LaunchAgents/com.beason.olivaw.plist"
+            if not plist_path.exists():
+                print(
+                    "LaunchAgent not installed. Run scripts/install_launch_agent.sh first.",
+                    file=sys.stderr,
+                )
+                return 2
+            label = f"gui/{os.getuid()}/com.beason.olivaw"
+            try:
+                subprocess.run(
+                    ["launchctl", "kickstart", "-k", label],
+                    check=True,
+                )
+            except FileNotFoundError:
+                print("launchctl is not available on this system.", file=sys.stderr)
+                return 2
+            except subprocess.CalledProcessError as exc:
+                print(f"Failed to restart {label}: {exc}", file=sys.stderr)
+                return 2
+            print(f"Restarted {label}.")
             return 0
 
         if args.command == "config":

@@ -10,6 +10,7 @@ from olivaw.actions import ActionHistory
 from olivaw.briefing.health_review import HealthReviewResult
 from olivaw.models import HealthReport, ProviderStatus
 from olivaw.web import (
+    _assistant_orb_state,
     _briefing_dashboard,
     _dashboard_status,
     _human_generated_time,
@@ -25,8 +26,10 @@ WEATHER_PROMPT = "Hi could you tell me what the weather is in Phoenix az"
 @pytest.fixture(autouse=True)
 def mock_health_checks(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("OLIVAW_TEMPLATE_AUTO_RELOAD", raising=False)
     monkeypatch.setattr("olivaw.web._HEALTH_REVIEW_CACHE", None)
     monkeypatch.setattr("olivaw.web._ACTION_HISTORY", ActionHistory())
+    monkeypatch.setattr("olivaw.web._ASSISTANT_SESSIONS", {})
 
     def fake_health(config=None):
         return HealthReport(
@@ -68,21 +71,28 @@ def test_home_route_renders():
 
     assert response.status_code == 200
     assert "Good morning Matthew." in response.text
-    assert "How can I help?" in response.text
-    assert 'aria-label="Conversation"' in response.text
-    assert 'aria-label="Utility rail"' in response.text
-    assert "Quick actions" in response.text
-    assert "Refresh Sources" in response.text
-    assert "Source Diagnostics" in response.text
+    assert "How can I help you today?" in response.text
+    assert 'data-orb-state="' in response.text
+    assert 'data-orb-state="working"' not in response.text
+    assert 'aria-label="Suggested prompts"' in response.text
+    assert 'aria-label="Open navigation"' in response.text
     assert 'href="/?prompt=How%20was%20the%20network%20overnight%3F"' in response.text
-    assert "Health review not generated yet." in response.text
+    assert "Anything important happened?" in response.text
+    assert "What should I know today?" in response.text
+    assert "What changed recently?" in response.text
+    assert "weather today" in response.text
+    assert "Show me the evidence package." not in response.text
+    assert "Refresh the health review." not in response.text
+    assert "Conversation input" not in response.text
+    assert "NOTABLE" not in response.text
+    assert "CALM" not in response.text
+    assert 'aria-label="Utility rail"' not in response.text
     assert "Operations Center" not in response.text
-    assert "Status Hero" not in response.text
-    assert "Source Freshness" not in response.text
-    assert "Recent Activity" not in response.text
-    assert "Network Signal" not in response.text
-    assert "Weather Summary" not in response.text
-    assert "Actions Card" not in response.text
+    assert "Quick actions" not in response.text
+    assert "Refresh Sources" not in response.text
+    assert "Source Diagnostics" not in response.text
+    assert "Health review not generated yet." not in response.text
+    assert '{"detail":"Method Not Allowed"}' not in response.text
     assert 'data-card-kind="' not in response.text
 
 
@@ -95,7 +105,7 @@ def test_home_route_does_not_generate_health_review_synchronously(monkeypatch):
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Health review not generated yet." in response.text
+    assert "Generate Health Review" not in response.text
 
 
 def test_home_route_does_not_create_action_request(monkeypatch):
@@ -117,46 +127,66 @@ def test_action_execution_requires_explicit_post():
 
     response = client.get("/actions/execute?action_id=refresh_sources")
 
-    assert response.status_code == 405
+    assert response.status_code == 200
+    assert "Good morning Matthew." in response.text
+    assert '{"detail":"Method Not Allowed"}' not in response.text
     assert web._ACTION_HISTORY.last_action is None
 
 
 def test_actions_post_refresh_sources_displays_result():
-    response = client.post(
+    redirect = client.post(
         "/actions/execute",
         data={"action_id": "refresh_sources"},
         headers={"referer": "http://testserver/"},
+        follow_redirects=False,
     )
+    assert redirect.status_code == 303
+    assert redirect.headers["location"] == "/?action_result=1&action_response=1"
+
+    response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
+    assert "Action executed." in response.text
     assert "Sources refreshed:" in response.text
     assert "Last action: Refresh Sources" in response.text
-    assert "Action Result" in response.text
+    assert ">Done</h2>" in response.text
 
 
 def test_actions_post_source_diagnostics_displays_source_summary():
-    response = client.post(
+    redirect = client.post(
         "/actions/execute",
         data={"action_id": "source_diagnostics"},
         headers={"referer": "http://testserver/"},
+        follow_redirects=False,
     )
+    assert redirect.status_code == 303
+    assert redirect.headers["location"] == "/?action_result=1&action_response=1"
+
+    response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
     assert "Source diagnostics ready" in response.text
     assert 'data-card-kind="diagnostics"' in response.text
+    assert 'data-dismiss-card' in response.text
     assert "Manual example source (manual): ok" in response.text
 
 
 def test_invalid_action_request_is_audited_and_bounded():
-    response = client.post(
+    redirect = client.post(
         "/actions/execute",
         data={"action_id": "missing"},
         headers={"referer": "http://testserver/"},
+        follow_redirects=False,
     )
+    assert redirect.status_code == 303
+    assert redirect.headers["location"] == "/?action_result=1&action_response=1"
+
+    response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
+    assert "Action executed." in response.text
     assert "Unknown action: missing" in response.text
-    assert "Action Result" in response.text
+    assert ">Done</h2>" in response.text
 
 
 def test_briefing_route_does_not_generate_health_review_synchronously(monkeypatch):
@@ -169,6 +199,74 @@ def test_briefing_route_does_not_generate_health_review_synchronously(monkeypatc
 
     assert response.status_code == 200
     assert "Health review not generated yet." in response.text
+
+
+def test_orb_state_resolver_prefers_calm_when_sources_are_normal():
+    orb = _assistant_orb_state(
+        dashboard={
+            "source_aggregate": {
+                "sources": [
+                    {"source_id": "prime_observer", "status": "ok"},
+                    {"source_id": "core_signal", "status": "ok"},
+                ]
+            },
+            "core_signal_events": [],
+            "status_label": "Healthy",
+        }
+    )
+
+    assert orb["state"] == "calm"
+
+
+def test_orb_state_resolver_marks_notable_when_recent_event_exists():
+    orb = _assistant_orb_state(
+        dashboard={
+            "source_aggregate": {
+                "sources": [
+                    {"source_id": "prime_observer", "status": "ok"},
+                    {"source_id": "core_signal", "status": "ok"},
+                ]
+            },
+            "core_signal_events": [{"summary": "A recent interpreted event exists."}],
+            "status_label": "Watch",
+        }
+    )
+
+    assert orb["state"] == "notable"
+
+
+def test_orb_state_resolver_marks_attention_for_active_condition():
+    orb = _assistant_orb_state(
+        dashboard={
+            "source_aggregate": {
+                "sources": [
+                    {"source_id": "prime_observer", "status": "ok"},
+                    {"source_id": "core_signal", "status": "ok"},
+                ]
+            },
+            "core_signal_events": [{"status": "attention", "severity": "attention"}],
+            "status_label": "Action Needed",
+        }
+    )
+
+    assert orb["state"] == "attention"
+
+
+def test_orb_state_resolver_marks_degraded_when_key_source_is_unavailable():
+    orb = _assistant_orb_state(
+        dashboard={
+            "source_aggregate": {
+                "sources": [
+                    {"source_id": "prime_observer", "status": "unavailable"},
+                    {"source_id": "core_signal", "status": "ok"},
+                ]
+            },
+            "core_signal_events": [],
+            "status_label": "Healthy",
+        }
+    )
+
+    assert orb["state"] == "degraded"
 
 
 def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path):
@@ -240,6 +338,7 @@ def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path
     assert response.status_code == 200
     assert 'data-card-kind="network"' in response.text
     assert 'data-card-kind="evidence"' in response.text
+    assert 'data-auto-dismiss-seconds="45"' not in response.text
     assert "Network" in response.text
     assert "Status" in response.text
     assert "Attribution" in response.text
@@ -249,6 +348,9 @@ def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path
     assert "Last incident" in response.text
     assert "2026-06-17 14:20 to 2026-06-17 14:23" in response.text
     assert "Open Evidence Package" in response.text
+    assert "Network Card" not in response.text
+    assert "Evidence Card" not in response.text
+    assert 'data-dismiss-card' in response.text
     assert "spark-strip" not in response.text
     assert "spark-segment" not in response.text
 
@@ -257,23 +359,56 @@ def test_home_navigation_simplifies_primary_routes():
     response = client.get("/")
 
     assert response.status_code == 200
-    assert '<div class="nav-primary">' in response.text
-    assert ">Assistant</a>" in response.text
-    assert 'href="/sources"' in response.text
-    assert 'href="/settings"' in response.text
-    assert '<a href="/health"' in response.text
-    assert '<div class="nav-secondary" aria-label="Secondary links">' in response.text
-    assert '<a href="/chat"' in response.text
-    assert 'href="/briefing"' in response.text
-    assert 'href="/capabilities"' in response.text
-    assert 'href="/config"' in response.text
+    assert 'class="nav-menu"' in response.text
+    assert 'aria-label="Open navigation"' in response.text
+    assert '<div class="nav-primary">' not in response.text
+    assert 'aria-label="Secondary links"' not in response.text
 
 
-def test_templates_do_not_hot_reload_in_long_running_web_process():
+def test_get_chat_route_renders():
+    response = client.get("/chat")
+
+    assert response.status_code == 200
+    assert "Good morning Matthew." in response.text
+    assert "How can I help you today?" in response.text
+    assert 'aria-label="Open navigation"' in response.text
+    assert '{"detail":"Method Not Allowed"}' not in response.text
+
+
+def test_get_chat_action_approve_redirects_to_safe_chat_page():
+    response = client.get("/chat/actions/approve?prompt=Refresh+the+health+review.")
+
+    assert response.status_code == 200
+    assert "Good morning Matthew." in response.text
+    assert "Refresh the health review." in response.text
+    assert '{"detail":"Method Not Allowed"}' not in response.text
+
+
+def test_get_health_review_refresh_redirects_to_briefing():
+    response = client.get("/health-review/refresh")
+
+    assert response.status_code == 200
+    assert "Today&apos;s Assessment" in response.text
+    assert '{"detail":"Method Not Allowed"}' not in response.text
+
+
+def test_templates_do_not_hot_reload_in_long_running_web_process_by_default():
     assert app.version == "0.7.0"
     from olivaw.web import templates
 
     assert templates.env.auto_reload is False
+
+
+def test_template_auto_reload_mode_is_opt_in(monkeypatch):
+    from olivaw.web import templates
+
+    monkeypatch.setenv("OLIVAW_TEMPLATE_AUTO_RELOAD", "true")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert templates.env.auto_reload is True
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_home_route_renders_from_non_repo_cwd(monkeypatch, tmp_path):
@@ -283,7 +418,7 @@ def test_home_route_renders_from_non_repo_cwd(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert "Good morning Matthew." in response.text
-    assert "How can I help?" in response.text
+    assert "How can I help you today?" in response.text
 
 
 def test_health_route_renders():
@@ -721,7 +856,7 @@ def test_chat_route_renders_weather_card_when_available(monkeypatch, tmp_path):
     assert "Currently 72°F and clear. High 86°F, low 68°F. Rain chance 10%." in (
         response.text
     )
-    assert "Weather details are shown only when the request explicitly calls for them." in response.text
+    assert "Weather details appear only when the current request calls for them." in response.text
 
 
 def test_briefing_route_omits_weather_when_unavailable(monkeypatch, tmp_path):
@@ -843,10 +978,13 @@ def test_briefing_route_renders_generated_health_review(monkeypatch, tmp_path):
     refresh = client.post(
         "/health-review/refresh",
         headers={"referer": "http://testserver/briefing"},
+        follow_redirects=False,
     )
-    response = client.get("/briefing")
+    assert refresh.status_code == 303
+    assert refresh.headers["location"] == "/briefing?action_result=1&action_response=1"
 
-    assert refresh.status_code == 200
+    response = client.get(refresh.headers["location"])
+
     assert response.status_code == 200
     executive_section = response.text.split('<section class="details-stack">', 1)[0]
     assert "Health Review" in executive_section
@@ -858,6 +996,8 @@ def test_briefing_route_renders_generated_health_review(monkeypatch, tmp_path):
 
 
 def test_health_review_refresh_caches_rejected_result(monkeypatch):
+    import olivaw.web as web
+
     monkeypatch.setattr(
         "olivaw.web.generate_health_review",
         lambda dashboard, *, config: HealthReviewResult(
@@ -873,13 +1013,19 @@ def test_health_review_refresh_caches_rejected_result(monkeypatch):
     refresh = client.post(
         "/health-review/refresh",
         headers={"referer": "http://testserver/"},
+        follow_redirects=False,
     )
-    response = client.get("/")
+    assert refresh.status_code == 303
+    assert refresh.headers["location"] == "/?action_result=1&action_response=1"
 
-    assert refresh.status_code == 200
+    response = client.get(refresh.headers["location"])
+
     assert response.status_code == 200
-    assert "Health review unavailable: guardrail rejected." in response.text
-    assert "unsupported recommendation" in response.text
+    assert "Action executed." in response.text
+    assert "Health review unavailable: guardrail rejected." not in response.text
+    assert web._HEALTH_REVIEW_CACHE is not None
+    assert web._HEALTH_REVIEW_CACHE.status == "guardrail_rejected"
+    assert web._HEALTH_REVIEW_CACHE.reason == "unsupported recommendation"
 
 
 def test_briefing_route_reflects_changed_source_data_between_requests(
@@ -2310,8 +2456,9 @@ def test_chat_post_creates_action_suggestion_without_executing(monkeypatch):
     assert response.status_code == 200
     assert "I can do that." in response.text
     assert 'data-card-kind="action"' in response.text
-    assert "Refresh Health Review" in response.text
-    assert "Run Action" in response.text
+    assert "Generate Health Review" in response.text
+    assert "Suggested Action" not in response.text
+    assert "Run Action" not in response.text
     assert web._ACTION_HISTORY.last_suggested_action is not None
     assert web._ACTION_HISTORY.last_suggested_action.action_id == (
         "refresh_health_review"
@@ -2343,7 +2490,7 @@ def test_chat_post_unknown_request_continues_normal_chat(monkeypatch):
     assert "Suggested Action" not in response.text
 
 
-def test_assistant_page_does_not_persist_prior_conversation(monkeypatch):
+def test_assistant_page_reloads_latest_interaction_within_session(monkeypatch):
     class FakeResponse:
         text = "transient chat response"
 
@@ -2357,26 +2504,56 @@ def test_assistant_page_does_not_persist_prior_conversation(monkeypatch):
 
     assert posted.status_code == 200
     assert refreshed.status_code == 200
-    assert "transient chat response" not in refreshed.text
-    assert ">hello<" not in refreshed.text
-    assert 'data-card-kind="' not in refreshed.text
+    assert "transient chat response" in refreshed.text
+    assert ">hello<" in refreshed.text
+
+
+def test_assistant_sessions_do_not_share_prior_conversation(monkeypatch):
+    class FakeResponse:
+        text = "session scoped response"
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    first_client = TestClient(app)
+    second_client = TestClient(app)
+
+    first_post = first_client.post("/chat", data={"prompt": "hello from session one"})
+    second_load = second_client.get("/")
+
+    assert first_post.status_code == 200
+    assert "session scoped response" in first_post.text
+    assert second_load.status_code == 200
+    assert "session scoped response" not in second_load.text
+    assert "hello from session one" not in second_load.text
+    assert 'data-card-kind="' not in second_load.text
 
 
 def test_chat_action_approval_executes_and_updates_history():
     import olivaw.web as web
 
     client.post("/chat", data={"prompt": "Refresh the health review."})
-    response = client.post(
+    redirect = client.post(
         "/chat/actions/approve",
         data={
             "action_id": "refresh_health_review",
             "prompt": "Refresh the health review.",
         },
+        follow_redirects=False,
     )
+    assert redirect.status_code == 303
+    assert (
+        redirect.headers["location"]
+        == "/chat?prompt=Refresh+the+health+review.&action_result=1&action_response=1"
+    )
+
+    response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
     assert "Action executed." in response.text
-    assert "Action Result" in response.text
+    assert ">Done</h2>" in response.text
     assert "Last action: Refresh Health Review" in response.text
     assert web._ACTION_HISTORY.last_result is not None
     assert web._ACTION_HISTORY.last_result.message.startswith("Health Review refresh")
@@ -2388,9 +2565,27 @@ def test_chat_page_renders_available_actions_panel():
     response = client.get("/chat")
 
     assert response.status_code == 200
-    assert "Quick actions" in response.text
-    assert "Refresh Sources" in response.text
-    assert "Operator initiated" in response.text
+    assert "Quick actions" not in response.text
+    assert "Refresh Sources" not in response.text
+    assert "Operator initiated" not in response.text
+    assert 'aria-label="Open navigation"' in response.text
+
+
+def test_post_redirects_land_on_get_safe_routes():
+    redirect = client.post(
+        "/chat/actions/approve",
+        data={
+            "action_id": "refresh_sources",
+            "prompt": "Refresh sources.",
+        },
+        follow_redirects=False,
+    )
+
+    assert redirect.status_code == 303
+    assert redirect.headers["location"].startswith("/chat?")
+    final = client.get(redirect.headers["location"])
+    assert final.status_code == 200
+    assert '{"detail":"Method Not Allowed"}' not in final.text
 
 
 def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
@@ -2407,7 +2602,396 @@ def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
 
     assert response.status_code == 200
     assert "do not currently have weather context available" in response.text
-    assert "Weather source status" in response.text
+    assert 'data-card-kind="weather"' not in response.text
+
+
+def test_chat_post_renders_evidence_card_for_explanation_request(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-17T14:23:00+00:00",
+  "current_attribution": {
+    "label": "Likely upstream (ISP / path)",
+    "status": "likely_upstream",
+    "confidence": "medium",
+    "evidence": ["WAN degraded while LAN remained healthy."]
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Morning Brief",
+  "date": "2026-06-17",
+  "status": "Watch",
+  "summary": "One interpreted slowdown event is present.",
+  "recommended_action": "No action unless people noticed issues.",
+  "events": [
+    {
+      "summary": "A sustained slowdown was observed.",
+      "status": "watch",
+      "severity": "watch",
+      "window_start": "2026-06-17 14:20",
+      "window_end": "2026-06-17 14:23",
+      "confidence": "medium",
+      "issue_location": "Likely upstream (ISP / path)",
+      "prime_observer_investigation": "viz/investigate.html?start=1&end=2"
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    class FakeResponse:
+        text = "Core Signal thinks this is worth watching because the slowdown repeated."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    response = client.post("/chat", data={"prompt": "Why does Core Signal think that?"})
+
+    assert response.status_code == 200
+    assert 'data-card-kind="evidence"' in response.text
+    assert "Evidence" in response.text
+    assert "Evidence Card" not in response.text
+
+
+def test_context_card_styles_use_readable_assistant_palette(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    class FakeResponse:
+        text = "The weather looks mild today."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    response = client.post("/chat", data={"prompt": "What's the weather today?"})
+
+    assert response.status_code == 200
+    assert "body.assistant-first .context-card h2 {" in response.text
+    assert "body.assistant-first .context-card-summary," in response.text
+    assert "body.assistant-first .context-card .action-list li span," in response.text
+    assert "body.assistant-first .context-card a {" in response.text
+    assert (
+        "body.assistant-first .context-card .card-label,\n"
+        "      body.assistant-first .assistant-history-note,\n"
+        "      body.assistant-first .source-footnote {\n"
+        "        color: rgba(22, 32, 56, 0.44);"
+    ) not in response.text
+
+
+def test_weather_card_is_dismissible_and_marks_auto_dismiss(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    class FakeResponse:
+        text = "The weather looks mild today."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    response = client.post("/chat", data={"prompt": "What's the weather today?"})
+
+    assert response.status_code == 200
+    assert 'data-card-kind="weather"' in response.text
+    assert 'data-context-card' in response.text
+    assert 'data-card-dismiss-key="weather"' in response.text
+    assert 'data-auto-dismiss-seconds="45"' in response.text
+    assert 'data-dismiss-card' in response.text
+    assert "/assistant/cards/dismiss" in response.text
+    assert "Weather Card" not in response.text
+
+
+def test_dismiss_endpoint_clears_current_session_card_and_persists_across_reload(
+    monkeypatch, tmp_path
+):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    class FakeResponse:
+        text = "The weather looks mild today."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    session_client = TestClient(app)
+    initial = session_client.post("/chat", data={"prompt": "What's the weather today?"})
+
+    assert initial.status_code == 200
+    assert 'data-card-kind="weather"' in initial.text
+
+    dismiss = session_client.post(
+        "/assistant/cards/dismiss",
+        data={"card_key": "weather"},
+        headers={"referer": "http://testserver/chat"},
+        follow_redirects=False,
+    )
+
+    assert dismiss.status_code == 303
+    assert dismiss.headers["location"] == "/chat"
+
+    reloaded = session_client.get("/chat")
+
+    assert reloaded.status_code == 200
+    assert "The weather looks mild today." in reloaded.text
+    assert 'data-card-kind="weather"' not in reloaded.text
+
+
+def test_dismiss_endpoint_affects_only_current_session(monkeypatch, tmp_path):
+    for name in (
+        "OLIVAW_CONFIG",
+        "OLIVAW_FILES_DIR",
+        "OLIVAW_PRIME_OBSERVER_DIR",
+        "OLIVAW_CORE_SIGNAL_DIR",
+        "OLIVAW_WEATHER_ENABLED",
+        "OLIVAW_WEATHER_LATITUDE",
+        "OLIVAW_WEATHER_LONGITUDE",
+        "OLIVAW_WEATHER_LOCATION_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    files_dir = tmp_path / "files"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    files_dir.mkdir()
+    monkeypatch.setenv("OLIVAW_FILES_DIR", str(files_dir))
+    monkeypatch.setenv("OLIVAW_PRIME_OBSERVER_DIR", str(prime_dir))
+    monkeypatch.setenv("OLIVAW_CORE_SIGNAL_DIR", str(core_dir))
+    monkeypatch.setenv("OLIVAW_WEATHER_ENABLED", "true")
+    monkeypatch.setenv("OLIVAW_WEATHER_LATITUDE", "33.4484")
+    monkeypatch.setenv("OLIVAW_WEATHER_LONGITUDE", "-112.074")
+    monkeypatch.setenv("OLIVAW_WEATHER_LOCATION_NAME", "Phoenix")
+    monkeypatch.setattr(
+        "olivaw.sources.weather.OpenMeteoProvider.fetch_forecast",
+        lambda self, *, latitude, longitude, units: {
+            "current": {
+                "time": "2026-06-17T08:00",
+                "temperature_2m": 72,
+                "weather_code": 0,
+                "wind_speed_10m": 6,
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+            "daily": {
+                "time": ["2026-06-17"],
+                "temperature_2m_max": [86],
+                "temperature_2m_min": [68],
+                "precipitation_probability_max": [10],
+                "weather_code": [0],
+            },
+            "daily_units": {
+                "temperature_2m_max": "°F",
+                "temperature_2m_min": "°F",
+            },
+        },
+    )
+
+    class FakeResponse:
+        text = "The weather looks mild today."
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    first_client = TestClient(app)
+    second_client = TestClient(app)
+
+    first_client.post("/chat", data={"prompt": "What's the weather today?"})
+    second_client.post("/chat", data={"prompt": "What's the weather today?"})
+
+    dismiss = first_client.post(
+        "/assistant/cards/dismiss",
+        data={"card_key": "weather"},
+        headers={"referer": "http://testserver/chat"},
+        follow_redirects=False,
+    )
+
+    assert dismiss.status_code == 303
+    assert 'data-card-kind="weather"' not in first_client.get("/chat").text
+    assert 'data-card-kind="weather"' in second_client.get("/chat").text
+
+
+def test_dismiss_route_get_fallback_redirects_to_safe_page():
+    response = client.get("/assistant/cards/dismiss", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
 
 
 def test_chat_post_exact_weather_request_matches_cli_guardrails(monkeypatch):

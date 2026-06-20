@@ -98,6 +98,12 @@ olivaw web
 
 Then open `http://127.0.0.1:8765`.
 
+For template-focused UI work, you can opt into live template reload checks:
+
+```bash
+OLIVAW_TEMPLATE_AUTO_RELOAD=true olivaw web
+```
+
 For LAN access from another device, bind to all local interfaces:
 
 ```bash
@@ -481,6 +487,18 @@ Check status:
 scripts/status_launch_agent.sh
 ```
 
+Restart the running LaunchAgent after code or template changes:
+
+```bash
+olivaw restart-web
+```
+
+Or use the matching shell helper:
+
+```bash
+scripts/restart_launch_agent.sh
+```
+
 Uninstall and stop the LaunchAgent:
 
 ```bash
@@ -501,10 +519,27 @@ Troubleshooting briefing freshness:
   regenerates the source-backed briefing for each page load. Use the page's
   "Refresh briefing" button or reload the browser tab; the page shows the UTC
   generation time for that request.
-- Code, template, dependency, or configuration-loading changes require
-  restarting the running web process. If Olivaw is running under launchd, rerun
-  `scripts/install_launch_agent.sh` or kickstart the service after deploying
-  code changes:
+- Olivaw's CSS currently ships inline with the Jinja templates, so stale UI is
+  usually a stale template process rather than a separate static-file cache.
+- By default, `olivaw web` keeps Jinja template auto-reload off. This is stable
+  for long-running sessions, but a launchd-managed process can keep older
+  template output in memory until it is restarted.
+- For local template iteration, opt in to Jinja template reload and dev HTML
+  no-store headers:
+
+  ```bash
+  OLIVAW_TEMPLATE_AUTO_RELOAD=true olivaw web
+  ```
+
+- Code, template, dependency, or configuration-loading changes still require
+  restarting the running web process when Olivaw is already running under
+  launchd. Use the explicit restart helper:
+
+  ```bash
+  olivaw restart-web
+  ```
+
+  Equivalent raw launchctl command:
 
   ```bash
   launchctl kickstart -k gui/$UID/com.beason.olivaw

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from types import SimpleNamespace
 
@@ -25,6 +26,7 @@ def clear_config_env(monkeypatch):
         "OLIVAW_CORE_SIGNAL_DIR",
         "OLIVAW_CORE_SIGNAL_ENABLED",
         "OLIVAW_HEALTH_REVIEW_ENABLED",
+        "OLIVAW_TEMPLATE_AUTO_RELOAD",
         "OPENAI_API_KEY",
         "OLIVAW_OPENAI_API_KEY",
     ):
@@ -91,6 +93,42 @@ def test_cli_web_accepts_host_and_port(monkeypatch, args, expected):
     assert main(args) == 0
     assert captured["host"] == expected["host"]
     assert captured["port"] == expected["port"]
+
+
+def test_cli_restart_web_kickstarts_launch_agent(monkeypatch, tmp_path, capsys):
+    target = tmp_path / "Library/LaunchAgents/com.beason.olivaw.plist"
+    target.parent.mkdir(parents=True)
+    target.write_text("", encoding="utf-8")
+
+    captured = {}
+
+    def fake_run(cmd, check):
+        captured["cmd"] = cmd
+        captured["check"] = check
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(os, "getuid", lambda: 501)
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    assert main(["restart-web"]) == 0
+    stdout = capsys.readouterr().out
+
+    assert captured == {
+        "cmd": ["launchctl", "kickstart", "-k", "gui/501/com.beason.olivaw"],
+        "check": True,
+    }
+    assert "Restarted gui/501/com.beason.olivaw." in stdout
+
+
+def test_cli_restart_web_requires_installed_launch_agent(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    assert main(["restart-web"]) == 2
+    captured = capsys.readouterr()
+
+    assert "LaunchAgent not installed." in captured.err
 
 
 def test_cli_sources_outputs_registered_sources(capsys):
