@@ -15,6 +15,40 @@
         </div>
       </div>
 
+      {% if timeline %}
+        <section class="assistant-thread" aria-label="Conversation Timeline">
+          {% for item in timeline %}
+            <article class="timeline-entry timeline-entry-{{ item.role }}">
+              <div class="message-bubble message-{{ item.role }}">
+                <p class="card-label">{{ item.speaker }}</p>
+                {% if item.body %}
+                  <p class="message-copy">{{ item.body }}</p>
+                {% endif %}
+              </div>
+
+              {% if item.capsules %}
+                <div class="timeline-capsules" aria-label="Context-aware artifacts">
+                  {% for capsule in item.capsules %}
+                    {% with capsule=capsule %}
+                      {% include "_conversation_capsule.html" %}
+                    {% endwith %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </section>
+      {% else %}
+        <section class="assistant-suggestions" aria-label="Suggested prompts">
+          <p class="card-label">Suggested prompts</p>
+          <div class="prompt-list">
+            {% for suggestion in prompt_suggestions %}
+              <a class="prompt-chip" href="/?prompt={{ suggestion | urlencode }}">{{ suggestion }}</a>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+
       <form class="chat-form assistant-composer assistant-composer-hero" method="post" action="/chat">
         <textarea
           id="prompt"
@@ -25,54 +59,6 @@
           <button type="submit">Send</button>
         </div>
       </form>
-
-      <section class="assistant-suggestions" aria-label="Suggested prompts">
-        <p class="card-label">Suggested questions</p>
-        <div class="prompt-list">
-          {% for suggestion in prompt_suggestions %}
-            <a class="prompt-chip" href="/?prompt={{ suggestion | urlencode }}">{{ suggestion }}</a>
-          {% endfor %}
-        </div>
-      </section>
-
-      <section class="assistant-trust" aria-label="Trust signals">
-        <p>Olivaw is connected to your sources.</p>
-        <p>Your data stays local.</p>
-      </section>
     </section>
-
-    {% if prompt or response or context_cards %}
-      <section class="assistant-thread" aria-label="Conversation">
-        {% if prompt %}
-          <article class="message-bubble message-user">
-            <p class="card-label">You</p>
-            <p class="message-copy">{{ prompt }}</p>
-          </article>
-        {% endif %}
-
-        {% if response %}
-          <article class="message-bubble message-assistant">
-            <p class="card-label">Olivaw</p>
-            <p class="message-copy">{{ response }}</p>
-          </article>
-        {% endif %}
-
-        {% if context_cards %}
-          <section class="conversation-card-grid" aria-label="Relevant context">
-            {% for card in context_cards %}
-              {% with card=card, prompt=prompt %}
-                {% include "_context_card.html" %}
-              {% endwith %}
-            {% endfor %}
-          </section>
-        {% endif %}
-
-        {% if action_result and last_action %}
-          <p class="assistant-history-note">
-            Last action: {{ last_action.action_id | replace("_", " ") | title }}{% if last_run_display %}; {{ last_run_display }}{% endif %}.
-          </p>
-        {% endif %}
-      </section>
-    {% endif %}
   </section>
 </div>

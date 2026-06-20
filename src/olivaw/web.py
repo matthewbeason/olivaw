@@ -102,19 +102,19 @@ _ASSISTANT_SESSIONS: dict[str, AssistantSessionState] = {}
 
 
 @dataclass
-class AssistantInteractionState:
+class AssistantConversationTurn:
     prompt: str = ""
     response: str | None = None
     suggested_action: dict[str, object] | None = None
     action_result: object | None = None
-    dismissed_card_keys: set[str] = field(default_factory=set)
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
 class AssistantSessionState:
     history: ActionHistory = field(default_factory=ActionHistory)
-    interaction: AssistantInteractionState | None = None
+    turns: list[AssistantConversationTurn] = field(default_factory=list)
+    dismissed_capsule_keys: set[str] = field(default_factory=set)
     last_seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -227,7 +227,7 @@ def approve_chat_action(
     result = _execute_web_action(action_id, history=session_state.history)
     _store_assistant_interaction(
         session_state,
-        prompt=prompt,
+        prompt="",
         response="Action executed.",
         action_result=result,
     )
@@ -458,14 +458,18 @@ def _store_assistant_interaction(
     action_result: object | None = None,
 ) -> None:
     session_state.last_seen_at = datetime.now(timezone.utc)
-    session_state.interaction = AssistantInteractionState(
-        prompt=prompt,
-        response=response,
-        suggested_action=dict(suggested_action) if suggested_action is not None else None,
-        action_result=action_result,
-        dismissed_card_keys=set(),
-        updated_at=session_state.last_seen_at,
+    session_state.turns.append(
+        AssistantConversationTurn(
+            prompt=prompt,
+            response=response,
+            suggested_action=(
+                dict(suggested_action) if suggested_action is not None else None
+            ),
+            action_result=action_result,
+            created_at=session_state.last_seen_at,
+        )
     )
+    session_state.turns = session_state.turns[-8:]
 
 
 def _dismiss_assistant_card(
@@ -473,10 +477,10 @@ def _dismiss_assistant_card(
     card_key: str,
 ) -> None:
     normalized = card_key.strip().lower()
-    if not normalized or session_state.interaction is None:
+    if not normalized:
         return
     session_state.last_seen_at = datetime.now(timezone.utc)
-    session_state.interaction.dismissed_card_keys.add(normalized)
+    session_state.dismissed_capsule_keys.add(normalized)
 
 
 def _action_execution_context(config: OlivawConfig) -> ActionExecutionContext:
@@ -618,22 +622,7 @@ def _assistant_template_context(
         history=session_state.history,
         show_result=show_action_result,
     )
-    history = _action_history_view(session_state.history)
-    interaction = session_state.interaction
-    prompt = prompt or (interaction.prompt if interaction is not None else "")
-    response = response if response is not None else (
-        interaction.response if interaction is not None else None
-    )
-    suggested_action = (
-        suggested_action
-        if suggested_action is not None
-        else interaction.suggested_action if interaction is not None else None
-    )
-    displayed_result = (
-        action_result
-        if action_result is not None
-        else interaction.action_result if interaction is not None else action_view.get("last_result")
-    )
+    displayed_result = action_result if action_result is not None else action_view.get("last_result")
     utility = _assistant_utility_rail(
         dashboard=dashboard,
         health=health,
@@ -645,23 +634,14 @@ def _assistant_template_context(
         "intro": "How can I help you today?",
         "orb": _assistant_orb_state(
             dashboard=dashboard,
-            action_result=action_result,
+            action_result=displayed_result if show_action_result else None,
         ),
         "prompt": prompt,
-        "response": response,
-        "suggested_action": suggested_action,
-        "action_result": displayed_result,
-        "actions": action_view,
-        "last_action": history["last_action"] if displayed_result else None,
-        "last_run_display": history["last_run_display"] if displayed_result else "",
-        "context_cards": _assistant_context_cards(
+        "timeline": _assistant_timeline(
             session_state=session_state,
-            prompt=prompt,
-            response=response,
             dashboard=dashboard,
-            suggested_action=suggested_action,
-            action_result=displayed_result,
         ),
+        "actions": action_view,
         "prompt_suggestions": _assistant_prompt_suggestions(),
         "utility": utility,
         "dashboard": dashboard,
@@ -670,6 +650,43 @@ def _assistant_template_context(
         "config": public_config(config),
         "is_home": request.url.path == "/",
     }
+
+
+def _assistant_timeline(
+    *,
+    session_state: AssistantSessionState,
+    dashboard: dict[str, object],
+) -> list[dict[str, object]]:
+    timeline: list[dict[str, object]] = []
+    for turn in session_state.turns:
+        if turn.prompt:
+            timeline.append(
+                {
+                    "role": "user",
+                    "speaker": "You",
+                    "body": turn.prompt,
+                    "capsules": [],
+                }
+            )
+
+        capsules = _assistant_context_capsules(
+            session_state=session_state,
+            prompt=turn.prompt,
+            response=turn.response,
+            dashboard=dashboard,
+            suggested_action=turn.suggested_action,
+            action_result=turn.action_result,
+        )
+        if turn.response or capsules:
+            timeline.append(
+                {
+                    "role": "assistant",
+                    "speaker": "Olivaw",
+                    "body": turn.response or "",
+                    "capsules": capsules,
+                }
+            )
+    return timeline
 
 
 def _assistant_prompt_suggestions() -> list[str]:
@@ -705,7 +722,7 @@ def _assistant_utility_rail(
     }
 
 
-def _assistant_context_cards(
+def _assistant_context_capsules(
     *,
     session_state: AssistantSessionState,
     prompt: str,
@@ -716,12 +733,7 @@ def _assistant_context_cards(
 ) -> list[dict[str, object]]:
     cards: list[dict[str, object]] = []
     dismissed_keys = {
-        str(key).strip().lower()
-        for key in (
-            session_state.interaction.dismissed_card_keys
-            if session_state.interaction is not None
-            else set()
-        )
+        str(key).strip().lower() for key in session_state.dismissed_capsule_keys
     }
     lower_prompt = prompt.lower()
     lower_response = (response or "").lower()
@@ -834,7 +846,7 @@ def _context_card(
     auto_dismiss_seconds: int | None = None,
 ) -> dict[str, object]:
     return {
-        "card_id": f"{kind}-{secrets.token_hex(4)}",
+        "capsule_id": f"{kind}-{secrets.token_hex(4)}",
         "dismiss_key": kind,
         "kind": kind,
         "label": label,
@@ -860,11 +872,13 @@ def _action_suggestion_context_card(
     action: dict[str, object],
     prompt: str,
 ) -> dict[str, object]:
+    label = str(action.get("label") or "Suggested action").strip()
     return _context_card(
         "action",
-        "I can do that.",
-        label="Action",
+        label,
+        label="Approval Required",
         tone="muted",
+        summary="Olivaw can take this step, but only after you explicitly approve it.",
         helper=str(action.get("helper") or ""),
         approval_action_id=str(action.get("action_id") or ""),
         prompt=prompt,
@@ -888,12 +902,13 @@ def _action_result_context_card(result: object) -> dict[str, object]:
             meta_rows.append({"label": label, "value": value})
     cta_href = str(metadata.get("href") or "").strip()
     cta_label = str(metadata.get("label") or "Open result").strip()
+    title = str(getattr(result, "message", "")).strip() or "Action completed."
     return _context_card(
         "action-result",
-        "Done",
-        label="Action",
+        title,
+        label="Result",
         tone="healthy" if getattr(result, "success", False) else "action",
-        summary=str(getattr(result, "message", "")),
+        summary=_action_result_summary(result),
         meta_rows=meta_rows,
         cta_href=cta_href,
         cta_label=cta_label,
@@ -1003,12 +1018,13 @@ def _weather_context_card(dashboard: dict[str, object]) -> dict[str, object] | N
     weather = dashboard.get("weather_context")
     if not isinstance(weather, dict) or not weather.get("summary"):
         return None
+    headline, details = _weather_capsule_copy(str(weather.get("summary") or ""))
     return _context_card(
         "weather",
-        "Weather",
+        headline,
         label="Weather",
         tone="weather",
-        summary=str(weather.get("summary") or ""),
+        summary=details,
         meta_rows=[
             {
                 "label": "Updated",
@@ -1024,15 +1040,16 @@ def _weather_context_card(dashboard: dict[str, object]) -> dict[str, object] | N
 
 def _network_context_card(dashboard: dict[str, object]) -> dict[str, object]:
     signal = _network_signal(dashboard)
+    fields = _dict_list(signal.get("fields"))
     return _context_card(
         "network",
-        "Network",
-        label="Network",
+        str(signal.get("headline") or "Network context"),
+        label="Network Context",
         tone=str(signal.get("tone") or "healthy"),
         summary=str(signal.get("summary") or ""),
         meta_rows=[
             {"label": item["label"], "value": item["value"]}
-            for item in _dict_list(signal.get("fields"))[:4]
+            for item in fields[:4]
         ],
         source_note="Network context is grounded in Prime Observer facts and Core Signal interpretation.",
     )
@@ -1059,10 +1076,10 @@ def _evidence_context_card(dashboard: dict[str, object]) -> dict[str, object] | 
         return None
     return _context_card(
         "evidence",
-        "Evidence",
+        "Evidence Package",
         label="Evidence",
         tone="watch",
-        summary="Source-backed evidence and navigation are available for deeper inspection.",
+        summary="Source-backed evidence and related navigation are available in this conversation.",
         details=[str(item) for item in _list_value(dashboard.get("what_we_know"))[:3]],
         links=links,
         source_note=(
@@ -1081,7 +1098,7 @@ def _diagnostics_context_card(dashboard: dict[str, object]) -> dict[str, object]
     )
     return _context_card(
         "diagnostics",
-        "Diagnostics",
+        "Source Diagnostics",
         label="Diagnostics",
         tone=_source_panel_tone(sources),
         summary=_source_panel_summary(sources),
@@ -1112,7 +1129,7 @@ def _diagnostics_context_card_from_result(result: object) -> dict[str, object] |
     summary = str(getattr(result, "message", "")).strip() or "Source diagnostics are available."
     return _context_card(
         "diagnostics",
-        "Diagnostics",
+        "Source Diagnostics",
         label="Diagnostics",
         tone="healthy" if getattr(result, "success", False) else "action",
         summary=summary,
@@ -1125,6 +1142,24 @@ def _diagnostics_context_card_from_result(result: object) -> dict[str, object] |
             for source in sources
         ],
     )
+
+
+def _action_result_summary(result: object) -> str:
+    metadata = getattr(result, "metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if "source_count" in metadata and "ok_count" in metadata:
+        return (
+            f"{metadata.get('ok_count')}/{metadata.get('source_count')} sources are available."
+        )
+    return ""
+
+
+def _weather_capsule_copy(summary: str) -> tuple[str, str]:
+    parts = [part.strip() for part in summary.split(";", 1)]
+    if len(parts) == 2 and parts[0] and parts[1]:
+        return parts[0], parts[1]
+    return "Weather", summary
 
 
 def _resolve_action_suggestion(prompt: str) -> dict[str, object] | None:
@@ -1467,6 +1502,7 @@ def _network_signal(dashboard: dict[str, object]) -> dict[str, object]:
         },
     ]
     return {
+        "headline": attribution or current_state or "Network context",
         "summary": current_state
         or str(dashboard.get("status_explanation") or "No active condition reported."),
         "fields": [

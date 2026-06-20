@@ -1,0 +1,75 @@
+<article
+  class="context-capsule tone-{{ capsule.tone or 'muted' }}"
+  data-context-capsule
+  data-capsule-id="{{ capsule.capsule_id }}"
+  data-capsule-dismiss-key="{{ capsule.dismiss_key }}"
+  data-capsule-kind="{{ capsule.kind }}"
+  data-card-kind="{{ capsule.kind }}"
+  {% if capsule.auto_dismiss_seconds %}data-auto-dismiss-seconds="{{ capsule.auto_dismiss_seconds }}"{% endif %}
+>
+  <div class="context-capsule-head">
+    <p class="card-label">{{ capsule.label }}</p>
+    {% if capsule.dismissible is not sameas false %}
+      <button
+        class="context-capsule-dismiss"
+        type="button"
+        data-dismiss-capsule
+        aria-label="Dismiss {{ capsule.title }}"
+      >
+        <span aria-hidden="true">&times;</span>
+      </button>
+    {% endif %}
+  </div>
+  <h3>{{ capsule.title }}</h3>
+  {% if capsule.summary %}
+    <p class="context-capsule-summary">{{ capsule.summary }}</p>
+  {% endif %}
+  {% if capsule.meta_rows %}
+    <dl class="context-capsule-meta">
+      {% for row in capsule.meta_rows %}
+        <div>
+          <dt>{{ row.label }}</dt>
+          <dd>{{ row.value }}</dd>
+        </div>
+      {% endfor %}
+    </dl>
+  {% endif %}
+  {% if capsule.details %}
+    <ul class="clean-list compact-context-list">
+      {% for item in capsule.details %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if capsule.links %}
+    <ul class="clean-list action-list compact-action-list">
+      {% for link in capsule.links %}
+        <li>
+          {% if link.href %}
+            <a href="{{ link.href }}">{{ link.label }}</a>
+          {% else %}
+            <span class="unavailable-action">{{ link.label }}</span>
+          {% endif %}
+          {% if link.detail %}<span>{{ link.detail }}</span>{% endif %}
+          {% if link.unavailable_reason %}<span class="action-helper">{{ link.unavailable_reason }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if capsule.helper %}
+    <p class="action-helper">{{ capsule.helper }}</p>
+  {% endif %}
+  {% if capsule.approval_action_id %}
+    <form method="post" action="/chat/actions/approve">
+      <input type="hidden" name="action_id" value="{{ capsule.approval_action_id }}">
+      <input type="hidden" name="prompt" value="{{ capsule.prompt }}">
+      <button type="submit">{{ capsule.button_label or "Run Action" }}</button>
+    </form>
+  {% endif %}
+  {% if capsule.cta_href %}
+    <a class="button-link compact-link" href="{{ capsule.cta_href }}">{{ capsule.cta_label or "Open result" }}</a>
+  {% endif %}
+  {% if capsule.source_note %}
+    <p class="source-footnote">{{ capsule.source_note }}</p>
+  {% endif %}
+</article>

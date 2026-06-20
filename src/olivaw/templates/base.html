@@ -935,6 +935,7 @@
       .assistant-shell {
         display: grid;
         justify-items: center;
+        overflow-x: clip;
       }
       .assistant-main {
         display: grid;
@@ -952,8 +953,8 @@
           0 28px 80px var(--assistant-shadow),
           inset 0 1px 0 rgba(255, 255, 255, 0.86);
         display: grid;
-        gap: 28px;
-        padding: 44px 44px 32px;
+        gap: 24px;
+        padding: 38px 38px 30px;
         position: relative;
         overflow: hidden;
       }
@@ -1070,7 +1071,7 @@
       }
       .assistant-thread {
         display: grid;
-        gap: 14px;
+        gap: 18px;
       }
       .assistant-history-note {
         color: rgba(22, 32, 56, 0.42);
@@ -1078,10 +1079,18 @@
         margin-bottom: 0;
         text-align: center;
       }
+      .timeline-entry {
+        display: grid;
+        gap: 12px;
+      }
+      .timeline-entry-user {
+        justify-items: end;
+      }
+      .timeline-entry-assistant {
+        justify-items: start;
+      }
       .message-bubble {
-        border: 1px solid var(--line);
-        border-radius: 24px;
-        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+        border-radius: 28px;
         max-width: min(760px, 100%);
         padding: 18px 20px;
         transition:
@@ -1094,17 +1103,30 @@
       }
       .message-user {
         background: rgba(143, 187, 255, 0.16);
+        border: 1px solid rgba(170, 192, 255, 0.44);
+        box-shadow: 0 18px 42px rgba(84, 111, 191, 0.16);
         justify-self: end;
       }
       .message-assistant {
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.76);
+        box-shadow:
+          0 20px 44px rgba(96, 112, 163, 0.12),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
       }
       .message-copy {
-        color: var(--ink);
+        color: var(--assistant-ink);
         font-size: 16px;
         line-height: 1.55;
         margin: 0;
         white-space: pre-wrap;
+      }
+      .timeline-capsules {
+        display: grid;
+        gap: 12px;
+        max-width: min(760px, 100%);
+        min-width: 0;
+        width: min(760px, 100%);
       }
       .assistant-composer {
         gap: 14px;
@@ -1136,7 +1158,7 @@
         right: 22px;
       }
       .assistant-composer-actions button,
-      .context-card form button {
+      .context-capsule form button {
         box-shadow: 0 16px 34px rgba(112, 125, 175, 0.24);
         transition:
           transform 180ms ease,
@@ -1153,7 +1175,7 @@
         right: 0;
       }
       .assistant-composer-actions button:hover,
-      .context-card form button:hover,
+      .context-capsule form button:hover,
       .button-link:hover,
       .prompt-chip:hover,
       .nav-menu-links a:hover {
@@ -1189,26 +1211,6 @@
       body.assistant-first .prompt-chip:hover {
         background: rgba(255, 255, 255, 0.64);
       }
-      .assistant-trust {
-        display: grid;
-        gap: 6px;
-        justify-items: center;
-        padding-top: 8px;
-        position: relative;
-        text-align: center;
-        z-index: 1;
-      }
-      .assistant-trust p {
-        color: rgba(22, 32, 56, 0.46);
-        font-size: 14px;
-        margin-bottom: 0;
-      }
-      .conversation-card-grid {
-        animation: lift-in 220ms ease;
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      }
       @keyframes lift-in {
         from {
           opacity: 0;
@@ -1219,49 +1221,51 @@
           transform: translateY(0);
         }
       }
-      .context-card {
+      .context-capsule {
         align-content: start;
+        animation: lift-in 220ms ease;
         display: grid;
         gap: 12px;
         min-height: 0;
-        padding: 18px;
+        padding: 16px;
         transition:
           opacity 220ms ease,
           transform 180ms ease,
           border-color 180ms ease,
           background 180ms ease;
       }
-      body.assistant-first .context-card {
+      body.assistant-first .context-capsule {
         backdrop-filter: blur(24px);
         background:
           linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(247, 250, 255, 0.44)),
           rgba(255, 255, 255, 0.42);
         border: 1px solid rgba(255, 255, 255, 0.76);
-        border-radius: 24px;
+        border-radius: 22px;
         box-shadow:
           0 22px 48px rgba(105, 122, 174, 0.14),
           inset 0 1px 0 rgba(255, 255, 255, 0.9);
         color: var(--assistant-ink);
       }
-      .context-card:hover {
+      .context-capsule:hover {
         transform: translateY(-2px);
       }
-      .context-card.is-dismissing {
+      .context-capsule.is-dismissing {
         opacity: 0;
         transform: translateY(-6px) scale(0.98);
       }
-      .context-card h2 {
+      .context-capsule h3 {
         margin-bottom: 0;
       }
-      body.assistant-first .context-card h2 {
+      body.assistant-first .context-capsule h3 {
         color: var(--assistant-ink);
+        font-size: 18px;
       }
-      .context-card-head {
+      .context-capsule-head {
         align-items: center;
         display: flex;
         justify-content: space-between;
       }
-      .context-card-dismiss {
+      .context-capsule-dismiss {
         align-items: center;
         background: rgba(255, 255, 255, 0.74);
         border: 1px solid rgba(184, 199, 232, 0.9);
@@ -1276,84 +1280,84 @@
         min-width: 32px;
         padding: 0;
       }
-      .context-card-dismiss:hover {
+      .context-capsule-dismiss:hover {
         background: rgba(255, 255, 255, 0.92);
         color: rgba(22, 32, 56, 0.96);
       }
-      .context-card-summary {
+      .context-capsule-summary {
         color: var(--ink);
         margin-bottom: 0;
       }
-      body.assistant-first .context-card-summary,
-      body.assistant-first .context-card .clean-list li,
-      body.assistant-first .context-card .action-list li,
-      body.assistant-first .context-card .action-list li .unavailable-action,
-      body.assistant-first .context-card .source-footnote {
+      body.assistant-first .context-capsule-summary,
+      body.assistant-first .context-capsule .clean-list li,
+      body.assistant-first .context-capsule .action-list li,
+      body.assistant-first .context-capsule .action-list li .unavailable-action,
+      body.assistant-first .context-capsule .source-footnote {
         color: rgba(22, 32, 56, 0.84);
       }
-      .context-card-meta {
+      .context-capsule-meta {
         display: grid;
         gap: 10px;
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-      .context-card-meta div {
+      .context-capsule-meta div {
         background: var(--soft-panel);
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 12px;
       }
-      body.assistant-first .context-card-meta div {
+      body.assistant-first .context-capsule-meta div {
         background: rgba(255, 255, 255, 0.34);
         border-color: rgba(195, 210, 240, 0.72);
       }
-      .context-card-meta dt {
+      .context-capsule-meta dt {
         color: var(--muted);
         font-size: 12px;
         font-weight: 700;
         text-transform: uppercase;
       }
-      body.assistant-first .context-card-meta dt {
+      body.assistant-first .context-capsule-meta dt {
         color: rgba(22, 32, 56, 0.58);
       }
-      .context-card-meta dd {
+      .context-capsule-meta dd {
         color: var(--ink);
         font-weight: 650;
         margin-top: 4px;
       }
-      body.assistant-first .context-card-meta dd {
+      body.assistant-first .context-capsule-meta dd {
         color: var(--assistant-ink);
       }
       .compact-context-list {
         gap: 8px;
       }
-      body.assistant-first .context-card .card-label,
+      body.assistant-first .context-capsule .card-label,
       body.assistant-first .assistant-history-note,
-      body.assistant-first .source-footnote {
+      body.assistant-first .context-capsule .source-footnote {
         color: rgba(22, 32, 56, 0.62);
       }
-      body.assistant-first .context-card .action-list li span,
-      body.assistant-first .context-card .meta-text {
+      body.assistant-first .context-capsule .action-list li span,
+      body.assistant-first .context-capsule .meta-text {
         color: rgba(22, 32, 56, 0.68);
       }
-      body.assistant-first .context-card .action-helper,
-      body.assistant-first .context-card .action-list li .action-helper {
+      body.assistant-first .context-capsule .action-helper,
+      body.assistant-first .context-capsule .action-list li .action-helper {
         color: rgba(154, 88, 28, 0.96);
       }
-      body.assistant-first .context-card a {
+      body.assistant-first .context-capsule a {
         color: #234f9b;
       }
-      body.assistant-first .context-card a:hover {
+      body.assistant-first .context-capsule a:hover {
         color: #173a75;
       }
-      body.assistant-first .context-card .button-link,
-      body.assistant-first .context-card form button {
+      body.assistant-first .context-capsule .button-link,
+      body.assistant-first .context-capsule form button {
         backdrop-filter: blur(18px);
         background: rgba(255, 255, 255, 0.62);
         border: 1px solid rgba(184, 199, 232, 0.86);
         color: var(--assistant-ink);
       }
-      body.assistant-first .context-card .button-link:hover,
-      body.assistant-first .context-card form button:hover {
+      body.assistant-first .context-capsule .button-link:hover,
+      body.assistant-first .context-capsule form button:hover {
         background: rgba(255, 255, 255, 0.82);
       }
       .compact-operator-actions form {
@@ -1401,7 +1405,7 @@
           width: 104px;
         }
         .assistant-composer-actions,
-        .context-card-meta {
+        .context-capsule-meta {
           display: grid;
           grid-template-columns: 1fr;
         }
@@ -1424,6 +1428,11 @@
         }
         .assistant-intro {
           font-size: clamp(22px, 6vw, 32px);
+        }
+        .timeline-capsules,
+        .message-bubble {
+          max-width: 100%;
+          width: 100%;
         }
         .nav-menu-panel {
           min-width: min(280px, calc(100vw - 32px));
@@ -1471,6 +1480,7 @@
                 <p class="nav-menu-group-label">System</p>
                 <div class="nav-menu-links">
                   <a href="/sources" class="{% if request.url.path == '/sources' %}active{% endif %}">Sources</a>
+                  <a href="/sources" class="{% if request.url.path == '/sources' %}active{% endif %}">Diagnostics</a>
                   <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Settings</a>
                   <a href="/health" class="{% if request.url.path == '/health' %}active{% endif %}">Health</a>
                   <a href="/config" class="{% if request.url.path == '/config' %}active{% endif %}">Config</a>
@@ -1504,12 +1514,12 @@
       (() => {
         const dismissEndpoint = "/assistant/cards/dismiss";
 
-        const persistDismissal = (card) => {
-          const cardKey = card?.getAttribute("data-card-dismiss-key");
-          if (!cardKey) {
+        const persistDismissal = (capsule) => {
+          const capsuleKey = capsule?.getAttribute("data-capsule-dismiss-key");
+          if (!capsuleKey) {
             return;
           }
-          const body = new URLSearchParams({ card_key: cardKey });
+          const body = new URLSearchParams({ card_key: capsuleKey });
           window.fetch(dismissEndpoint, {
             method: "POST",
             body,
@@ -1521,27 +1531,27 @@
           }).catch(() => {});
         };
 
-        const dismissCard = (card) => {
-          if (!card || card.classList.contains("is-dismissing")) {
+        const dismissCapsule = (capsule) => {
+          if (!capsule || capsule.classList.contains("is-dismissing")) {
             return;
           }
-          persistDismissal(card);
-          card.classList.add("is-dismissing");
-          window.setTimeout(() => card.remove(), 220);
+          persistDismissal(capsule);
+          capsule.classList.add("is-dismissing");
+          window.setTimeout(() => capsule.remove(), 220);
         };
 
-        document.querySelectorAll("[data-dismiss-card]").forEach((button) => {
+        document.querySelectorAll("[data-dismiss-capsule]").forEach((button) => {
           button.addEventListener("click", () => {
-            dismissCard(button.closest("[data-context-card], [data-card-id]"));
+            dismissCapsule(button.closest("[data-context-capsule], [data-capsule-id]"));
           });
         });
 
-        document.querySelectorAll("[data-auto-dismiss-seconds]").forEach((card) => {
-          const seconds = Number(card.getAttribute("data-auto-dismiss-seconds") || "0");
+        document.querySelectorAll("[data-auto-dismiss-seconds]").forEach((capsule) => {
+          const seconds = Number(capsule.getAttribute("data-auto-dismiss-seconds") || "0");
           if (!Number.isFinite(seconds) || seconds <= 0) {
             return;
           }
-          window.setTimeout(() => dismissCard(card), seconds * 1000);
+          window.setTimeout(() => dismissCapsule(capsule), seconds * 1000);
         });
       })();
     </script>

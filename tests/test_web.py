@@ -148,8 +148,8 @@ def test_actions_post_refresh_sources_displays_result():
     assert response.status_code == 200
     assert "Action executed." in response.text
     assert "Sources refreshed:" in response.text
-    assert "Last action: Refresh Sources" in response.text
-    assert ">Done</h2>" in response.text
+    assert 'data-card-kind="action-result"' in response.text
+    assert "sources are available." in response.text
 
 
 def test_actions_post_source_diagnostics_displays_source_summary():
@@ -167,7 +167,7 @@ def test_actions_post_source_diagnostics_displays_source_summary():
     assert response.status_code == 200
     assert "Source diagnostics ready" in response.text
     assert 'data-card-kind="diagnostics"' in response.text
-    assert 'data-dismiss-card' in response.text
+    assert 'data-dismiss-capsule' in response.text
     assert "Manual example source (manual): ok" in response.text
 
 
@@ -186,7 +186,7 @@ def test_invalid_action_request_is_audited_and_bounded():
     assert response.status_code == 200
     assert "Action executed." in response.text
     assert "Unknown action: missing" in response.text
-    assert ">Done</h2>" in response.text
+    assert 'data-card-kind="action-result"' in response.text
 
 
 def test_briefing_route_does_not_generate_health_review_synchronously(monkeypatch):
@@ -350,7 +350,9 @@ def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path
     assert "Open Evidence Package" in response.text
     assert "Network Card" not in response.text
     assert "Evidence Card" not in response.text
-    assert 'data-dismiss-card' in response.text
+    assert 'aria-label="Conversation Timeline"' in response.text
+    assert 'aria-label="Context-aware artifacts"' in response.text
+    assert 'data-dismiss-capsule' in response.text
     assert "spark-strip" not in response.text
     assert "spark-segment" not in response.text
 
@@ -361,8 +363,25 @@ def test_home_navigation_simplifies_primary_routes():
     assert response.status_code == 200
     assert 'class="nav-menu"' in response.text
     assert 'aria-label="Open navigation"' in response.text
+    assert ">Sources</a>" in response.text
+    assert ">Diagnostics</a>" in response.text
+    assert ">Settings</a>" in response.text
+    assert ">Health</a>" in response.text
+    assert ">Config</a>" in response.text
     assert '<div class="nav-primary">' not in response.text
     assert 'aria-label="Secondary links"' not in response.text
+
+
+def test_assistant_shell_includes_mobile_safe_timeline_styles():
+    response = client.get("/chat")
+
+    assert response.status_code == 200
+    assert ".assistant-shell {" in response.text
+    assert "overflow-x: clip;" in response.text
+    assert ".timeline-capsules," in response.text
+    assert ".message-bubble {" in response.text
+    assert "max-width: 100%;" in response.text
+    assert "width: 100%;" in response.text
 
 
 def test_get_chat_route_renders():
@@ -852,7 +871,7 @@ def test_chat_route_renders_weather_card_when_available(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert 'data-card-kind="weather"' in response.text
-    assert ">Weather</h2>" in response.text
+    assert 'aria-label="Conversation Timeline"' in response.text
     assert "Currently 72°F and clear. High 86°F, low 68°F. Rain chance 10%." in (
         response.text
     )
@@ -2553,8 +2572,8 @@ def test_chat_action_approval_executes_and_updates_history():
 
     assert response.status_code == 200
     assert "Action executed." in response.text
-    assert ">Done</h2>" in response.text
-    assert "Last action: Refresh Health Review" in response.text
+    assert 'data-card-kind="action-result"' in response.text
+    assert "Health Review refresh" in response.text
     assert web._ACTION_HISTORY.last_result is not None
     assert web._ACTION_HISTORY.last_result.message.startswith("Health Review refresh")
     assert web._ACTION_HISTORY.approved_at is not None
@@ -2677,7 +2696,7 @@ def test_chat_post_renders_evidence_card_for_explanation_request(monkeypatch, tm
     assert "Evidence Card" not in response.text
 
 
-def test_context_card_styles_use_readable_assistant_palette(monkeypatch, tmp_path):
+def test_context_capsule_styles_use_readable_assistant_palette(monkeypatch, tmp_path):
     for name in (
         "OLIVAW_CONFIG",
         "OLIVAW_FILES_DIR",
@@ -2740,14 +2759,14 @@ def test_context_card_styles_use_readable_assistant_palette(monkeypatch, tmp_pat
     response = client.post("/chat", data={"prompt": "What's the weather today?"})
 
     assert response.status_code == 200
-    assert "body.assistant-first .context-card h2 {" in response.text
-    assert "body.assistant-first .context-card-summary," in response.text
-    assert "body.assistant-first .context-card .action-list li span," in response.text
-    assert "body.assistant-first .context-card a {" in response.text
+    assert "body.assistant-first .context-capsule h3 {" in response.text
+    assert "body.assistant-first .context-capsule-summary," in response.text
+    assert "body.assistant-first .context-capsule .action-list li span," in response.text
+    assert "body.assistant-first .context-capsule a {" in response.text
     assert (
-        "body.assistant-first .context-card .card-label,\n"
+        "body.assistant-first .context-capsule .card-label,\n"
         "      body.assistant-first .assistant-history-note,\n"
-        "      body.assistant-first .source-footnote {\n"
+        "      body.assistant-first .context-capsule .source-footnote {\n"
         "        color: rgba(22, 32, 56, 0.44);"
     ) not in response.text
 
@@ -2816,10 +2835,10 @@ def test_weather_card_is_dismissible_and_marks_auto_dismiss(monkeypatch, tmp_pat
 
     assert response.status_code == 200
     assert 'data-card-kind="weather"' in response.text
-    assert 'data-context-card' in response.text
-    assert 'data-card-dismiss-key="weather"' in response.text
+    assert 'data-context-capsule' in response.text
+    assert 'data-capsule-dismiss-key="weather"' in response.text
     assert 'data-auto-dismiss-seconds="45"' in response.text
-    assert 'data-dismiss-card' in response.text
+    assert 'data-dismiss-capsule' in response.text
     assert "/assistant/cards/dismiss" in response.text
     assert "Weather Card" not in response.text
 
