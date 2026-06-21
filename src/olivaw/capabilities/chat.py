@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 
+from olivaw.actions import IntentResolver, create_builtin_action_registry
 from olivaw.assistant.attribution import (
     DERIVED,
     MODEL_KNOWLEDGE,
@@ -24,6 +26,7 @@ HEALTH_HINT = (
     "If using Ollama, verify it is installed and running at the configured endpoint."
 )
 UNKNOWN_SOURCE_ANSWER = "I don't currently have a source that can answer that."
+_ACTION_INTENT_RESOLVER = IntentResolver(create_builtin_action_registry())
 
 
 @dataclass
@@ -37,50 +40,91 @@ class ChatCapability:
     def run_with_attribution(
         self, prompt: str, config: OlivawConfig | None = None
     ) -> AttributedResponse:
+        started = time.perf_counter()
         resolved_config = config or load_config()
         if _is_capability_question(prompt):
-            return AttributedResponse(
+            return _with_chat_metrics(
+                AttributedResponse(
                 text=capabilities_summary(),
                 attribution=SOURCE_BACKED,
                 sources=("capability-registry",),
                 capability="capability inspection",
                 provenance_label="Source",
                 provenance_detail="Capability Registry",
+                ),
+                started,
+                model_invoked=False,
             )
 
         if _is_source_question(prompt):
-            return _source_status_response(resolved_config)
+            return _with_chat_metrics(
+                _source_status_response(resolved_config),
+                started,
+                model_invoked=False,
+            )
+
+        action = _action_suggestion_response(prompt)
+        if action is not None:
+            return _with_chat_metrics(action, started, model_invoked=False)
 
         grounded = _grounded_operational_response(prompt, resolved_config)
         if grounded is not None:
-            return grounded
+            return _with_chat_metrics(grounded, started, model_invoked=False)
 
         missing = _missing_capability_for_prompt(prompt)
         if missing:
-            return _capability_unavailable_response(missing)
+            return _with_chat_metrics(
+                _capability_unavailable_response(missing),
+                started,
+                model_invoked=False,
+            )
 
         router = RouterProvider(resolved_config)
+        prompt_started = time.perf_counter()
+        system_prompt = build_chat_system_prompt()
+        prompt_construction_duration_ms = _elapsed_ms(prompt_started)
+        model_started = time.perf_counter()
         try:
             response = router.complete(
                 CompletionRequest(
                     prompt=prompt,
-                    system_prompt=build_chat_system_prompt(),
+                    system_prompt=system_prompt,
                 )
             )
         except Exception as exc:
-            return AttributedResponse(
-                text=_format_chat_failure(exc),
-                attribution=MODEL_UNAVAILABLE,
-                capability="model provider",
-                provenance_label="Unavailable",
-                provenance_detail="Model provider",
+            return _with_chat_metrics(
+                AttributedResponse(
+                    text=_format_chat_failure(exc),
+                    attribution=MODEL_UNAVAILABLE,
+                    capability="model provider",
+                    provenance_label="Unavailable",
+                    provenance_detail="Model provider",
+                ),
+                started,
+                model_invoked=True,
+                prompt_construction_duration_ms=prompt_construction_duration_ms,
+                model_request_duration_ms=_elapsed_ms(model_started),
             )
-        return AttributedResponse(
-            text=_sanitize_model_knowledge_response(response.text),
-            attribution=MODEL_KNOWLEDGE,
-            capability="chat",
-            provenance_label="Knowledge mode",
-            provenance_detail="Model knowledge",
+        return _with_chat_metrics(
+            AttributedResponse(
+                text=_sanitize_model_knowledge_response(response.text),
+                attribution=MODEL_KNOWLEDGE,
+                capability="chat",
+                provenance_label="Knowledge mode",
+                provenance_detail="Model knowledge",
+            ),
+            started,
+            model_invoked=True,
+            prompt_construction_duration_ms=prompt_construction_duration_ms,
+            model_request_duration_ms=response.request_duration_ms
+            if response.request_duration_ms is not None
+            else _elapsed_ms(model_started),
+            ollama_total_duration_ms=response.ollama_total_duration_ms,
+            ollama_load_duration_ms=response.ollama_load_duration_ms,
+            ollama_prompt_eval_duration_ms=response.ollama_prompt_eval_duration_ms,
+            ollama_eval_duration_ms=response.ollama_eval_duration_ms,
+            prompt_eval_count=response.prompt_eval_count,
+            eval_count=response.eval_count,
         )
 
 
@@ -89,6 +133,21 @@ def _format_chat_failure(exc: Exception) -> str:
     return (
         "Chat provider unavailable: "
         f"{type(exc).__name__}: {detail}. {HEALTH_HINT}"
+    )
+
+
+def _action_suggestion_response(prompt: str) -> AttributedResponse | None:
+    match = _ACTION_INTENT_RESOLVER.resolve(prompt)
+    if match is None:
+        return None
+    return AttributedResponse(
+        text="I can do that.",
+        attribution=SOURCE_BACKED,
+        sources=("action-registry",),
+        capability="action suggestion",
+        provenance_label="Source",
+        provenance_detail="Action Registry",
+        metrics={"matched_action_id": match.action_id},
     )
 
 
@@ -138,8 +197,10 @@ def _weather_response(
 ) -> AttributedResponse | None:
     if not _is_weather_question(prompt):
         return None
+    started = time.perf_counter()
     registry = create_default_registry(config)
     aggregate = registry.aggregate().as_dict()
+    source_retrieval_duration_ms = _elapsed_ms(started)
     for source in _source_dicts(aggregate.get("sources")):
         if source.get("source_id") != "weather":
             continue
@@ -155,6 +216,9 @@ def _weather_response(
                     capability="weather lookup",
                     provenance_label="Source",
                     provenance_detail="Weather",
+                    metrics={
+                        "source_retrieval_duration_ms": source_retrieval_duration_ms
+                    },
                 )
         message = str(source.get("message") or "").strip()
         return _source_unavailable_response(
@@ -162,10 +226,12 @@ def _weather_response(
             required_source="weather data",
             sources=("weather",),
             detail=message or "Weather source data is not available right now.",
+            metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
         )
     return _missing_source_response(
         subject="weather conditions",
         required_source="weather data",
+        metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
     )
 
 
@@ -213,7 +279,9 @@ def _is_network_question(prompt: str) -> bool:
 
 
 def _network_response(config: OlivawConfig) -> AttributedResponse:
+    started = time.perf_counter()
     aggregate = create_default_registry(config).aggregate().as_dict()
+    source_retrieval_duration_ms = _elapsed_ms(started)
     prime = _source_by_id(aggregate, "prime_observer")
     core = _source_by_id(aggregate, "core_signal")
     prime_summary = _source_summary(prime)
@@ -227,6 +295,7 @@ def _network_response(config: OlivawConfig) -> AttributedResponse:
             capability="network status",
             provenance_label="Derived from",
             provenance_detail="Prime Observer + Core Signal",
+            metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
         )
     if prime_summary:
         return AttributedResponse(
@@ -236,6 +305,7 @@ def _network_response(config: OlivawConfig) -> AttributedResponse:
             capability="network status",
             provenance_label="Source",
             provenance_detail="Prime Observer",
+            metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
         )
     if core_summary:
         return AttributedResponse(
@@ -245,6 +315,7 @@ def _network_response(config: OlivawConfig) -> AttributedResponse:
             capability="network status",
             provenance_label="Source",
             provenance_detail="Core Signal",
+            metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
         )
 
     unavailable_sources = tuple(
@@ -265,10 +336,12 @@ def _network_response(config: OlivawConfig) -> AttributedResponse:
             required_source="Prime Observer evidence or Core Signal interpretation",
             sources=unavailable_sources,
             detail=detail,
+            metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
         )
     return _missing_source_response(
         subject="network conditions",
         required_source="Prime Observer evidence or Core Signal interpretation",
+        metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
     )
 
 
@@ -359,8 +432,10 @@ def _planned_source_name(capability: str, planned_sources: tuple[str, ...]) -> s
 
 
 def _source_status_response(config: OlivawConfig) -> AttributedResponse:
+    started = time.perf_counter()
     registry = create_default_registry(config)
     health = registry.health_all()
+    source_retrieval_duration_ms = _elapsed_ms(started)
     lines = ["Registered Olivaw sources:"]
     for source in health:
         lines.append(
@@ -379,6 +454,7 @@ def _source_status_response(config: OlivawConfig) -> AttributedResponse:
         capability="source inspection",
         provenance_label="Source",
         provenance_detail="Registered sources",
+        metrics={"source_retrieval_duration_ms": source_retrieval_duration_ms},
     )
 
 
@@ -386,6 +462,7 @@ def _missing_source_response(
     *,
     subject: str,
     required_source: str,
+    metrics: dict[str, object] | None = None,
 ) -> AttributedResponse:
     return AttributedResponse(
         text=(
@@ -396,6 +473,7 @@ def _missing_source_response(
         capability=subject,
         provenance_label="Knowledge mode",
         provenance_detail="Unknown operational state",
+        metrics=metrics or {},
     )
 
 
@@ -405,6 +483,7 @@ def _source_unavailable_response(
     required_source: str,
     sources: tuple[str, ...],
     detail: str,
+    metrics: dict[str, object] | None = None,
 ) -> AttributedResponse:
     detail_text = f" {detail}" if detail else ""
     return AttributedResponse(
@@ -417,6 +496,7 @@ def _source_unavailable_response(
         capability=subject,
         provenance_label="Knowledge mode",
         provenance_detail="Unavailable source-backed state",
+        metrics=metrics or {},
     )
 
 
@@ -490,3 +570,30 @@ def _sanitize_model_knowledge_response(text: str) -> str:
             f"{stripped}"
         )
     return stripped
+
+
+def _with_chat_metrics(
+    response: AttributedResponse,
+    started: float,
+    *,
+    model_invoked: bool,
+    **metrics: object,
+) -> AttributedResponse:
+    merged = {
+        "total_request_duration_ms": _elapsed_ms(started),
+        "time_to_first_token_ms": None,
+        "model_invoked": model_invoked,
+        "prompt_construction_duration_ms": metrics.pop(
+            "prompt_construction_duration_ms", 0
+        ),
+        "source_retrieval_duration_ms": response.metrics.get(
+            "source_retrieval_duration_ms", 0
+        ),
+    }
+    merged.update(response.metrics)
+    merged.update({key: value for key, value in metrics.items() if value is not None})
+    return replace(response, metrics=merged)
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)

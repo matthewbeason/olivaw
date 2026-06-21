@@ -32,6 +32,13 @@ class CompletionResponse:
     text: str
     provider: str
     model: str | None = None
+    request_duration_ms: int | None = None
+    ollama_total_duration_ms: int | None = None
+    ollama_load_duration_ms: int | None = None
+    ollama_prompt_eval_duration_ms: int | None = None
+    ollama_eval_duration_ms: int | None = None
+    prompt_eval_count: int | None = None
+    eval_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,4 +48,3 @@ class HealthReport:
     selected_provider: str | None
     cloud_fallback: str
     notes: list[str] = field(default_factory=list)
-

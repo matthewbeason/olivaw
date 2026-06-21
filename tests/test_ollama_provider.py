@@ -53,7 +53,17 @@ def test_ollama_complete_posts_model_prompt_and_reads_response(monkeypatch):
         captured["timeout"] = timeout
         captured["method"] = request.get_method()
         captured["payload"] = json.loads(request.data.decode("utf-8"))
-        return FakeHTTPResponse({"response": "generated review"})
+        return FakeHTTPResponse(
+            {
+                "response": "generated review",
+                "total_duration": 2_500_000_000,
+                "load_duration": 300_000_000,
+                "prompt_eval_duration": 400_000_000,
+                "eval_duration": 1_700_000_000,
+                "prompt_eval_count": 12,
+                "eval_count": 24,
+            }
+        )
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
@@ -74,8 +84,20 @@ def test_ollama_complete_posts_model_prompt_and_reads_response(monkeypatch):
             "prompt": "hello",
             "system": "system",
             "stream": False,
+            "keep_alive": "5m",
+            "options": {
+                "num_ctx": 4096,
+                "num_predict": 128,
+            },
         },
     }
     assert response.text == "generated review"
     assert response.provider == "ollama"
     assert response.model == "llama3.2:3b"
+    assert response.request_duration_ms is not None
+    assert response.ollama_total_duration_ms == 2500
+    assert response.ollama_load_duration_ms == 300
+    assert response.ollama_prompt_eval_duration_ms == 400
+    assert response.ollama_eval_duration_ms == 1700
+    assert response.prompt_eval_count == 12
+    assert response.eval_count == 24

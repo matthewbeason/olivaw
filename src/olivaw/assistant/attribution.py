@@ -29,3 +29,4 @@ class AttributedResponse:
     capability: str | None = None
     provenance_label: str = ""
     provenance_detail: str = ""
+    metrics: dict[str, object] = field(default_factory=dict)

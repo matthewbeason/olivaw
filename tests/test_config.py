@@ -16,6 +16,9 @@ def clear_config_env(monkeypatch):
         "OLIVAW_CONFIG",
         "OLIVAW_LOCAL_BASE_URL",
         "OLIVAW_LOCAL_MODEL",
+        "OLIVAW_LOCAL_KEEP_ALIVE",
+        "OLIVAW_LOCAL_NUM_CTX",
+        "OLIVAW_LOCAL_NUM_PREDICT",
         "OLIVAW_CLOUD_ENABLED",
         "OLIVAW_CLOUD_MODEL",
         "OLIVAW_CLOUD_FALLBACK",
@@ -48,6 +51,9 @@ def test_defaults_are_local_first_when_implicit_config_is_missing(
 
     assert config.local.type == "ollama"
     assert config.local.base_url == "http://localhost:11434"
+    assert config.local.keep_alive == "5m"
+    assert config.local.num_ctx == 4096
+    assert config.local.num_predict == 128
     assert config.cloud.enabled is False
     assert config.policy.cloud_fallback == "disabled"
     assert config.config_path == default_user_config_path()
@@ -64,6 +70,9 @@ def test_user_config_loads_persistent_settings_and_secrets(monkeypatch, tmp_path
 [providers.local]
 base_url = "http://localhost:11435"
 model = "mistral"
+keep_alive = "10m"
+num_ctx = 2048
+num_predict = 64
 
 [providers.cloud]
 enabled = true
@@ -93,6 +102,9 @@ openai_api_key = "config-secret"
     assert config.config_file_exists is True
     assert config.local.base_url == "http://localhost:11435"
     assert config.local.model == "mistral"
+    assert config.local.keep_alive == "10m"
+    assert config.local.num_ctx == 2048
+    assert config.local.num_predict == 64
     assert config.cloud.enabled is True
     assert config.cloud.model == "gpt-4.1"
     assert config.cloud.api_key == "config-secret"
@@ -129,6 +141,9 @@ openai_api_key = "config-secret"
         encoding="utf-8",
     )
     monkeypatch.setenv("OLIVAW_LOCAL_MODEL", "llama3.2")
+    monkeypatch.setenv("OLIVAW_LOCAL_KEEP_ALIVE", "30m")
+    monkeypatch.setenv("OLIVAW_LOCAL_NUM_CTX", "8192")
+    monkeypatch.setenv("OLIVAW_LOCAL_NUM_PREDICT", "96")
     monkeypatch.setenv("OLIVAW_CLOUD_ENABLED", "true")
     monkeypatch.setenv("OLIVAW_CLOUD_MODEL", "gpt-4.1-mini")
     monkeypatch.setenv("OLIVAW_CLOUD_FALLBACK", "enabled")
@@ -139,11 +154,17 @@ openai_api_key = "config-secret"
 
     assert config.local.base_url == "http://localhost:11435"
     assert config.local.model == "llama3.2"
+    assert config.local.keep_alive == "30m"
+    assert config.local.num_ctx == 8192
+    assert config.local.num_predict == 96
     assert config.cloud.enabled is True
     assert config.cloud.model == "gpt-4.1-mini"
     assert config.cloud.api_key == "env-secret"
     assert config.policy.cloud_fallback == "enabled"
     assert public["cloud"]["api_key_present"] is True
+    assert public["local"]["keep_alive"] == "30m"
+    assert public["local"]["num_ctx"] == 8192
+    assert public["local"]["num_predict"] == 96
     assert "env-secret" not in str(public)
     assert "config-secret" not in str(public)
 
@@ -214,6 +235,9 @@ openai_api_key = "config-secret"
     )
     monkeypatch.setenv("OLIVAW_LOCAL_BASE_URL", "")
     monkeypatch.setenv("OLIVAW_LOCAL_MODEL", "")
+    monkeypatch.setenv("OLIVAW_LOCAL_KEEP_ALIVE", "")
+    monkeypatch.setenv("OLIVAW_LOCAL_NUM_CTX", "")
+    monkeypatch.setenv("OLIVAW_LOCAL_NUM_PREDICT", "")
     monkeypatch.setenv("OLIVAW_CLOUD_ENABLED", "")
     monkeypatch.setenv("OLIVAW_CLOUD_MODEL", "")
     monkeypatch.setenv("OLIVAW_CLOUD_FALLBACK", "")
@@ -231,6 +255,9 @@ openai_api_key = "config-secret"
 
     assert config.local.base_url == "http://localhost:11435"
     assert config.local.model == "mistral"
+    assert config.local.keep_alive == "5m"
+    assert config.local.num_ctx == 4096
+    assert config.local.num_predict == 128
     assert config.cloud.enabled is True
     assert config.cloud.model == "gpt-4.1"
     assert config.policy.cloud_fallback == "enabled"
@@ -395,8 +422,11 @@ openai_api_key = "config-secret"
     assert public["config_file_exists"] is True
     assert public["cloud"]["api_key_present"] is True
     assert public["sources"]["prime_observer"]["base_url"] is None
+    assert public["local"]["num_ctx"] == 4096
     assert "config-secret" not in str(public)
     assert "API key configured: yes" in report
+    assert "Context length: 4096" in report
+    assert "Max generated tokens: 128" in report
     assert "Prime Observer base URL: not configured" in report
     assert "config-secret" not in report
 

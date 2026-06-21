@@ -140,6 +140,9 @@ Example `~/Library/Application Support/Olivaw/config.toml`:
 type = "ollama"
 base_url = "http://localhost:11434"
 model = "llama3.1:8b"
+keep_alive = "5m"
+num_ctx = 4096
+num_predict = 128
 
 [providers.cloud]
 type = "openai"

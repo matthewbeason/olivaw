@@ -133,6 +133,10 @@ def test_reasoning_request_calls_provider_and_is_model_knowledge(monkeypatch):
                 text="local-first means local systems are preferred",
                 provider="test",
                 model="test-model",
+                request_duration_ms=123,
+                ollama_total_duration_ms=120,
+                prompt_eval_count=10,
+                eval_count=20,
             )
 
     monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", CapturingRouter)
@@ -147,6 +151,12 @@ def test_reasoning_request_calls_provider_and_is_model_knowledge(monkeypatch):
     assert "local systems are preferred" in result.text
     assert result.provenance_label == "Knowledge mode"
     assert result.provenance_detail == "Model knowledge"
+    assert result.metrics["model_invoked"] is True
+    assert result.metrics["model_request_duration_ms"] == 123
+    assert result.metrics["ollama_total_duration_ms"] == 120
+    assert result.metrics["prompt_eval_count"] == 10
+    assert result.metrics["eval_count"] == 20
+    assert result.metrics["time_to_first_token_ms"] is None
 
 
 def test_general_knowledge_request_stays_model_knowledge(monkeypatch):
@@ -270,6 +280,9 @@ def test_weather_request_uses_weather_source_when_available(monkeypatch):
     assert result.capability == "weather lookup"
     assert result.provenance_label == "Source"
     assert result.provenance_detail == "Weather"
+    assert result.metrics["model_invoked"] is False
+    assert result.metrics["source_retrieval_duration_ms"] >= 0
+    assert result.metrics["total_request_duration_ms"] >= 0
     assert result.text.startswith("Weather:")
     assert "Currently 72°F and clear." in result.text
 
@@ -377,12 +390,39 @@ def test_disk_usage_question_declines_without_invented_estimate(monkeypatch):
     assert result.attribution == UNKNOWN_OPERATIONAL_STATE
     assert result.provenance_label == "Knowledge mode"
     assert result.provenance_detail == "Unknown operational state"
+    assert result.metrics["model_invoked"] is False
+    assert result.metrics["prompt_construction_duration_ms"] == 0
     assert "I don't currently have a source that can answer that." in result.text
     assert "I would need a source that provides disk utilization." in result.text
     normalized = result.text.lower()
     assert "estimate" not in normalized
     assert "gb" not in normalized
     assert "monitoring" not in normalized
+
+
+def test_action_request_uses_action_registry_without_provider(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("action request should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "Refresh the health review.",
+        config=OlivawConfig(),
+    )
+
+    assert result.text == "I can do that."
+    assert result.attribution == SOURCE_BACKED
+    assert result.sources == ("action-registry",)
+    assert result.capability == "action suggestion"
+    assert result.provenance_label == "Source"
+    assert result.provenance_detail == "Action Registry"
+    assert result.metrics["matched_action_id"] == "refresh_health_review"
+    assert result.metrics["model_invoked"] is False
 
 
 def test_memory_usage_question_declines_without_invented_telemetry(monkeypatch):

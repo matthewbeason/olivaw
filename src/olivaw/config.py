@@ -25,6 +25,9 @@ class LocalProviderConfig:
     type: str = "ollama"
     base_url: str = "http://localhost:11434"
     model: str = "llama3.1:8b"
+    keep_alive: str = "5m"
+    num_ctx: int = 4096
+    num_predict: int = 128
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,15 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         ),
         model=str(
             _env_value("OLIVAW_LOCAL_MODEL", local_data.get("model", "llama3.1:8b"))
+        ),
+        keep_alive=str(
+            _env_value("OLIVAW_LOCAL_KEEP_ALIVE", local_data.get("keep_alive", "5m"))
+        ),
+        num_ctx=int(
+            _env_value("OLIVAW_LOCAL_NUM_CTX", local_data.get("num_ctx", 4096))
+        ),
+        num_predict=int(
+            _env_value("OLIVAW_LOCAL_NUM_PREDICT", local_data.get("num_predict", 128))
         ),
     )
 
@@ -229,6 +241,9 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "type": config.local.type,
             "base_url": config.local.base_url,
             "model": config.local.model,
+            "keep_alive": config.local.keep_alive,
+            "num_ctx": config.local.num_ctx,
+            "num_predict": config.local.num_predict,
         },
         "cloud": {
             "type": config.cloud.type,
@@ -280,6 +295,9 @@ def format_config_report(config: OlivawConfig) -> str:
             f"- Type: {config.local.type}",
             f"- Base URL: {config.local.base_url}",
             f"- Model: {config.local.model}",
+            f"- Keep alive: {config.local.keep_alive}",
+            f"- Context length: {config.local.num_ctx}",
+            f"- Max generated tokens: {config.local.num_predict}",
             "",
             "Cloud Provider:",
             f"- Type: {config.cloud.type}",
