@@ -46,7 +46,10 @@
           <p class="card-label">Suggested prompts</p>
           <div class="prompt-list">
             {% for suggestion in prompt_suggestions %}
-              <a class="prompt-chip" href="/?prompt={{ suggestion | urlencode }}">{{ suggestion }}</a>
+              <form method="post" action="/chat">
+                <input type="hidden" name="prompt" value="{{ suggestion.prompt }}">
+                <button class="prompt-chip" type="submit">{{ suggestion.label }}</button>
+              </form>
             {% endfor %}
           </div>
         </section>

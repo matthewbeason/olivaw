@@ -724,6 +724,11 @@
         min-height: 38px;
         padding: 8px 11px;
       }
+      .prompt-chip {
+        cursor: pointer;
+        font: inherit;
+        margin-top: 0;
+      }
       .button-link:hover,
       .prompt-chip:hover {
         background: rgba(139, 198, 183, 0.22);
@@ -1006,6 +1011,11 @@
         overflow: clip;
         position: relative;
         transform: translateZ(0);
+        transition:
+          background 520ms ease,
+          box-shadow 520ms ease,
+          filter 520ms ease,
+          opacity 520ms ease;
         width: 100%;
       }
       .assistant-orb::after {
@@ -1032,42 +1042,21 @@
         --orb-core: rgba(132, 195, 255, 0.9);
         --orb-halo: rgba(132, 195, 255, 0.36);
       }
+      .assistant-orb-informational {
+        --orb-core: rgba(191, 166, 255, 0.88);
+        --orb-halo: rgba(191, 166, 255, 0.34);
+      }
       .assistant-orb-notable {
         --orb-core: rgba(255, 206, 122, 0.88);
         --orb-halo: rgba(255, 206, 122, 0.34);
       }
-      .assistant-orb-attention {
+      .assistant-orb-elevated {
         --orb-core: rgba(255, 166, 97, 0.9);
         --orb-halo: rgba(255, 166, 97, 0.38);
       }
-      .assistant-orb-degraded {
-        --orb-core: rgba(178, 183, 194, 0.82);
-        --orb-halo: rgba(178, 183, 194, 0.28);
-      }
-      .assistant-orb-working {
-        --orb-core: rgba(167, 213, 255, 0.92);
-        --orb-halo: rgba(167, 213, 255, 0.46);
-      }
-      .assistant-orb.is-animated {
-        animation: orb-pulse 2.4s ease-in-out infinite;
-      }
-      @keyframes orb-pulse {
-        0%, 100% {
-          box-shadow:
-            0 0 0 1px rgba(255, 255, 255, 0.05),
-            0 0 22px var(--orb-halo),
-            0 18px 44px rgba(0, 0, 0, 0.34),
-            inset 0 1px 10px rgba(255, 255, 255, 0.32);
-          transform: scale(1);
-        }
-        50% {
-          box-shadow:
-            0 0 0 1px rgba(255, 255, 255, 0.08),
-            0 0 42px var(--orb-halo),
-            0 18px 44px rgba(0, 0, 0, 0.34),
-            inset 0 1px 10px rgba(255, 255, 255, 0.32);
-          transform: scale(1.02);
-        }
+      .assistant-orb-critical {
+        --orb-core: rgba(255, 105, 105, 0.9);
+        --orb-halo: rgba(255, 105, 105, 0.34);
       }
       .assistant-hero {
         max-width: 780px;
@@ -1215,6 +1204,9 @@
       .assistant-suggestions .prompt-list {
         justify-content: center;
         gap: 10px;
+      }
+      .assistant-suggestions form {
+        margin: 0;
       }
       body.assistant-first .prompt-chip {
         backdrop-filter: blur(18px);

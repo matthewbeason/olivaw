@@ -76,14 +76,16 @@ def test_home_route_renders():
     assert 'data-orb-state="working"' not in response.text
     assert 'aria-label="Suggested prompts"' in response.text
     assert 'aria-label="Open navigation"' in response.text
-    assert 'href="/?prompt=How%20was%20the%20network%20overnight%3F"' in response.text
-    assert "Anything important happened?" in response.text
-    assert "What should I know today?" in response.text
-    assert "What changed recently?" in response.text
-    assert "weather today" in response.text
+    assert 'method="post" action="/chat"' in response.text
+    assert 'name="prompt" value="How was the network overnight?"' in response.text
+    assert "Network activity" in response.text
+    assert "Recent changes" in response.text
+    assert "Provider health" in response.text
+    assert "Weather outlook" in response.text
+    assert "Evidence review" in response.text
+    assert "System status" in response.text
     assert 'class="assistant-orb-wrap assistant-orb-clip"' in response.text
     assert "assistant-orb-surface" in response.text
-    assert "Show me the evidence package." not in response.text
     assert "Refresh the health review." not in response.text
     assert "Conversation input" not in response.text
     assert "NOTABLE" not in response.text
@@ -135,7 +137,7 @@ def test_action_execution_requires_explicit_post():
     assert web._ACTION_HISTORY.last_action is None
 
 
-def test_actions_post_refresh_sources_displays_result():
+def test_actions_post_refresh_sources_keeps_home_fresh():
     redirect = client.post(
         "/actions/execute",
         data={"action_id": "refresh_sources"},
@@ -148,13 +150,13 @@ def test_actions_post_refresh_sources_displays_result():
     response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
-    assert "Action executed." in response.text
-    assert "Sources refreshed:" in response.text
-    assert 'data-card-kind="action-result"' in response.text
-    assert "sources are available." in response.text
+    assert "Action executed." not in response.text
+    assert "Sources refreshed:" not in response.text
+    assert 'data-card-kind="action-result"' not in response.text
+    assert 'aria-label="Suggested prompts"' in response.text
 
 
-def test_actions_post_source_diagnostics_displays_source_summary():
+def test_actions_post_source_diagnostics_keeps_home_fresh():
     redirect = client.post(
         "/actions/execute",
         data={"action_id": "source_diagnostics"},
@@ -167,10 +169,10 @@ def test_actions_post_source_diagnostics_displays_source_summary():
     response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
-    assert "Source diagnostics ready" in response.text
-    assert 'data-card-kind="diagnostics"' in response.text
-    assert 'data-dismiss-capsule' in response.text
-    assert "Manual example source (manual): ok" in response.text
+    assert "Source diagnostics ready" not in response.text
+    assert 'data-card-kind="diagnostics"' not in response.text
+    assert "Manual example source (manual): ok" not in response.text
+    assert 'aria-label="Suggested prompts"' in response.text
 
 
 def test_invalid_action_request_is_audited_and_bounded():
@@ -186,9 +188,10 @@ def test_invalid_action_request_is_audited_and_bounded():
     response = client.get(redirect.headers["location"])
 
     assert response.status_code == 200
-    assert "Action executed." in response.text
-    assert "Unknown action: missing" in response.text
-    assert 'data-card-kind="action-result"' in response.text
+    assert "Action executed." not in response.text
+    assert "Unknown action: missing" not in response.text
+    assert 'data-card-kind="action-result"' not in response.text
+    assert 'aria-label="Suggested prompts"' in response.text
 
 
 def test_briefing_route_does_not_generate_health_review_synchronously(monkeypatch):
@@ -251,7 +254,7 @@ def test_orb_state_resolver_marks_attention_for_active_condition():
         }
     )
 
-    assert orb["state"] == "attention"
+    assert orb["state"] == "elevated"
 
 
 def test_orb_state_resolver_marks_degraded_when_key_source_is_unavailable():
@@ -268,7 +271,7 @@ def test_orb_state_resolver_marks_degraded_when_key_source_is_unavailable():
         }
     )
 
-    assert orb["state"] == "degraded"
+    assert orb["state"] == "critical"
 
 
 def test_home_network_signal_renders_human_readable_fields(monkeypatch, tmp_path):
@@ -1047,7 +1050,7 @@ def test_health_review_refresh_caches_rejected_result(monkeypatch):
     response = client.get(refresh.headers["location"])
 
     assert response.status_code == 200
-    assert "Action executed." in response.text
+    assert "Action executed." not in response.text
     assert "Health review unavailable: guardrail rejected." not in response.text
     assert web._HEALTH_REVIEW_CACHE is not None
     assert web._HEALTH_REVIEW_CACHE.status == "guardrail_rejected"
@@ -2534,6 +2537,33 @@ def test_chat_page_reloads_latest_interaction_within_session(monkeypatch):
     assert ">hello<" in refreshed.text
 
 
+def test_chat_page_keeps_only_latest_interaction_thread(monkeypatch):
+    class FakeResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    def fake_run_with_attribution(self, prompt, config=None):
+        return FakeResponse(f"response for {prompt}")
+
+    session_client = TestClient(app)
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        fake_run_with_attribution,
+    )
+
+    first = session_client.post("/chat", data={"prompt": "first stale turn"})
+    second = session_client.post("/chat", data={"prompt": "second active turn"})
+    refreshed = session_client.get("/chat")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert refreshed.status_code == 200
+    assert "first stale turn" not in refreshed.text
+    assert "response for first stale turn" not in refreshed.text
+    assert "second active turn" in refreshed.text
+    assert "response for second active turn" in refreshed.text
+
+
 def test_home_route_does_not_restore_prior_timeline_on_first_get(monkeypatch):
     class FakeResponse:
         text = "transient chat response"
@@ -2552,6 +2582,30 @@ def test_home_route_does_not_restore_prior_timeline_on_first_get(monkeypatch):
     assert ">hello<" not in refreshed.text
     assert 'aria-label="Conversation Timeline"' not in refreshed.text
     assert 'aria-label="Suggested prompts"' in refreshed.text
+
+
+def test_home_topic_suggestion_posts_directly_to_chat(monkeypatch):
+    class FakeResponse:
+        text = "source-backed network summary"
+
+    def fake_run_with_attribution(self, prompt, config=None):
+        assert prompt == "How was the network overnight?"
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        fake_run_with_attribution,
+    )
+
+    response = client.post(
+        "/chat",
+        data={"prompt": "How was the network overnight?"},
+    )
+
+    assert response.status_code == 200
+    assert "source-backed network summary" in response.text
+    assert 'aria-label="Conversation Timeline"' in response.text
+    assert 'aria-label="Suggested prompts"' not in response.text
 
 
 def test_assistant_sessions_do_not_share_prior_conversation(monkeypatch):

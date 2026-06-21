@@ -72,6 +72,7 @@ app = FastAPI(title="Olivaw", version="0.7.0")
 HEALTH_REVIEW_CACHE_TTL = timedelta(minutes=15)
 ASSISTANT_SESSION_TTL = timedelta(hours=12)
 ASSISTANT_SESSION_COOKIE = "olivaw_session"
+ASSISTANT_ACTIVE_THREAD_LIMIT = 1
 
 
 @dataclass(frozen=True)
@@ -123,7 +124,6 @@ class AssistantSessionState:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     session_id, session_state, is_new = _assistant_session(request)
-    show_action_result = _show_action_result(request)
     response = _template_response(
         request,
         "home.html",
@@ -131,9 +131,9 @@ def home(request: Request):
             **_assistant_template_context(
                 request=request,
                 session_state=session_state,
-                prompt=request.query_params.get("prompt", ""),
-                show_action_result=show_action_result,
-                render_timeline=show_action_result,
+                prompt="",
+                show_action_result=False,
+                render_timeline=False,
             )
         },
     )
@@ -477,7 +477,7 @@ def _store_assistant_interaction(
             created_at=session_state.last_seen_at,
         )
     )
-    session_state.turns = session_state.turns[-8:]
+    session_state.turns = session_state.turns[-ASSISTANT_ACTIVE_THREAD_LIMIT:]
 
 
 def _dismiss_assistant_card(
@@ -703,13 +703,14 @@ def _assistant_timeline(
     return timeline
 
 
-def _assistant_prompt_suggestions() -> list[str]:
+def _assistant_prompt_suggestions() -> list[dict[str, str]]:
     return [
-        "How was the network overnight?",
-        "Anything important happened?",
-        "What's the weather today?",
-        "What changed recently?",
-        "What should I know today?",
+        {"label": "Network activity", "prompt": "How was the network overnight?"},
+        {"label": "Recent changes", "prompt": "What changed recently?"},
+        {"label": "Provider health", "prompt": "How are the providers doing?"},
+        {"label": "Weather outlook", "prompt": "What's the weather today?"},
+        {"label": "Evidence review", "prompt": "Show me the evidence package."},
+        {"label": "System status", "prompt": "What should I know today?"},
     ]
 
 
@@ -960,10 +961,10 @@ def _assistant_orb_state(
 ) -> dict[str, str | bool]:
     if action_result is not None:
         return {
-            "state": "working",
-            "label": "Working",
+            "state": "informational",
+            "label": "Informational",
             "description": "An action just ran using existing source-backed context.",
-            "animate": True,
+            "animate": False,
         }
 
     source_aggregate = dashboard.get("source_aggregate")
@@ -978,8 +979,8 @@ def _assistant_orb_state(
     }
     if _assistant_context_is_degraded(source_status):
         return {
-            "state": "degraded",
-            "label": "Degraded Context",
+            "state": "critical",
+            "label": "Critical",
             "description": "Some key context is currently unavailable.",
             "animate": False,
         }
@@ -987,8 +988,8 @@ def _assistant_orb_state(
     events = _dict_list(dashboard.get("core_signal_events"))
     if _assistant_has_attention_condition(dashboard, events):
         return {
-            "state": "attention",
-            "label": "Attention",
+            "state": "elevated",
+            "label": "Elevated",
             "description": "Current sources indicate an active condition worth attention.",
             "animate": False,
         }
