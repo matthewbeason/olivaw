@@ -2,9 +2,9 @@
   <section class="assistant-main">
     <section class="assistant-stage">
       <div class="assistant-stage-copy">
-        <div class="assistant-orb-wrap" aria-hidden="true">
+        <div class="assistant-orb-wrap assistant-orb-clip" aria-hidden="true">
           <div
-            class="assistant-orb assistant-orb-{{ orb.state }}{% if orb.animate %} is-animated{% endif %}"
+            class="assistant-orb assistant-orb-surface assistant-orb-{{ orb.state }}{% if orb.animate %} is-animated{% endif %}"
             data-orb-state="{{ orb.state }}"
           ></div>
         </div>

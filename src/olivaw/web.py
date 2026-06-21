@@ -123,15 +123,17 @@ class AssistantSessionState:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     session_id, session_state, is_new = _assistant_session(request)
+    show_action_result = _show_action_result(request)
     response = _template_response(
         request,
         "home.html",
         {
             **_assistant_template_context(
-            request=request,
-            session_state=session_state,
-            prompt=request.query_params.get("prompt", ""),
-            show_action_result=_show_action_result(request),
+                request=request,
+                session_state=session_state,
+                prompt=request.query_params.get("prompt", ""),
+                show_action_result=show_action_result,
+                render_timeline=show_action_result,
             )
         },
     )
@@ -618,6 +620,7 @@ def _assistant_template_context(
     suggested_action: dict[str, object] | None = None,
     action_result: object | None = None,
     show_action_result: bool = False,
+    render_timeline: bool = True,
 ) -> dict[str, object]:
     config = load_config()
     _, dashboard, generated_at = _source_backed_dashboard(config)
@@ -643,9 +646,13 @@ def _assistant_template_context(
             action_result=displayed_result if show_action_result else None,
         ),
         "prompt": prompt,
-        "timeline": _assistant_timeline(
-            session_state=session_state,
-            dashboard=dashboard,
+        "timeline": (
+            _assistant_timeline(
+                session_state=session_state,
+                dashboard=dashboard,
+            )
+            if render_timeline
+            else []
         ),
         "actions": action_view,
         "prompt_suggestions": _assistant_prompt_suggestions(),

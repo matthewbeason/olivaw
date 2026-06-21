@@ -81,6 +81,8 @@ def test_home_route_renders():
     assert "What should I know today?" in response.text
     assert "What changed recently?" in response.text
     assert "weather today" in response.text
+    assert 'class="assistant-orb-wrap assistant-orb-clip"' in response.text
+    assert "assistant-orb-surface" in response.text
     assert "Show me the evidence package." not in response.text
     assert "Refresh the health review." not in response.text
     assert "Conversation input" not in response.text
@@ -378,6 +380,11 @@ def test_assistant_shell_includes_mobile_safe_timeline_styles():
     assert response.status_code == 200
     assert ".assistant-shell {" in response.text
     assert "overflow-x: clip;" in response.text
+    assert ".assistant-orb-wrap {" in response.text
+    assert "isolation: isolate;" in response.text
+    assert ".assistant-orb-clip {" in response.text
+    assert "overflow: clip;" in response.text
+    assert ".assistant-orb-surface::before {" in response.text
     assert ".timeline-capsules," in response.text
     assert ".message-bubble {" in response.text
     assert "max-width: 100%;" in response.text
@@ -2509,7 +2516,25 @@ def test_chat_post_unknown_request_continues_normal_chat(monkeypatch):
     assert "Suggested Action" not in response.text
 
 
-def test_assistant_page_reloads_latest_interaction_within_session(monkeypatch):
+def test_chat_page_reloads_latest_interaction_within_session(monkeypatch):
+    class FakeResponse:
+        text = "transient chat response"
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        lambda self, prompt, config=None: FakeResponse(),
+    )
+
+    posted = client.post("/chat", data={"prompt": "hello"})
+    refreshed = client.get("/chat")
+
+    assert posted.status_code == 200
+    assert refreshed.status_code == 200
+    assert "transient chat response" in refreshed.text
+    assert ">hello<" in refreshed.text
+
+
+def test_home_route_does_not_restore_prior_timeline_on_first_get(monkeypatch):
     class FakeResponse:
         text = "transient chat response"
 
@@ -2523,8 +2548,10 @@ def test_assistant_page_reloads_latest_interaction_within_session(monkeypatch):
 
     assert posted.status_code == 200
     assert refreshed.status_code == 200
-    assert "transient chat response" in refreshed.text
-    assert ">hello<" in refreshed.text
+    assert "transient chat response" not in refreshed.text
+    assert ">hello<" not in refreshed.text
+    assert 'aria-label="Conversation Timeline"' not in refreshed.text
+    assert 'aria-label="Suggested prompts"' in refreshed.text
 
 
 def test_assistant_sessions_do_not_share_prior_conversation(monkeypatch):
