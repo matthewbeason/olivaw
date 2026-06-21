@@ -2620,7 +2620,8 @@ def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
     response = client.post("/chat", data={"prompt": "What's the weather in Phoenix?"})
 
     assert response.status_code == 200
-    assert "do not currently have weather context available" in response.text
+    assert "The source exists but is currently unavailable." in response.text
+    assert "Unavailable: Weather" in response.text
     assert 'data-card-kind="weather"' not in response.text
 
 
@@ -3026,10 +3027,28 @@ def test_chat_post_exact_weather_request_matches_cli_guardrails(monkeypatch):
     response = client.post("/chat", data={"prompt": WEATHER_PROMPT})
 
     assert response.status_code == 200
-    assert "do not currently have weather context available" in response.text
+    assert "The source exists but is currently unavailable." in response.text
     assert "enable_openai_weather" not in response.text
     assert "provide weather via cloud OpenAI provider support" not in response.text
     assert "OpenAI can retrieve live weather" not in response.text
+
+
+def test_chat_post_renders_provenance_for_source_grounded_unknown_response(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request):
+            raise AssertionError("disk usage question should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    response = client.post("/chat", data={"prompt": "What is disk usage?"})
+
+    assert response.status_code == 200
+    assert "No source available" in response.text
+    assert "disk utilization" in response.text
+    assert "Unknown: No source available" in response.text
 
 
 def test_settings_does_not_expose_secret(monkeypatch):

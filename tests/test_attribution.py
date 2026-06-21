@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from olivaw.assistant.attribution import (
     CAPABILITY_UNAVAILABLE,
+    DERIVED,
     MODEL_REASONED,
     SOURCE_BACKED,
     AttributedResponse,
@@ -25,6 +26,7 @@ def test_attributed_response_carries_internal_metadata():
 
 def test_attribution_states_are_stable_strings():
     assert SOURCE_BACKED.value == "source-backed"
+    assert DERIVED.value == "derived"
     assert MODEL_REASONED.value == "model-reasoned"
     assert CAPABILITY_UNAVAILABLE.value == "capability-unavailable"
 

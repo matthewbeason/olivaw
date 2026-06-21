@@ -7,12 +7,18 @@ import pytest
 
 from olivaw.assistant.attribution import (
     CAPABILITY_UNAVAILABLE,
+    DERIVED,
     MODEL_REASONED,
     SOURCE_BACKED,
 )
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.config import OlivawConfig
-from olivaw.config import FileSourceConfig, WeatherSourceConfig
+from olivaw.config import (
+    CoreSignalSourceConfig,
+    FileSourceConfig,
+    PrimeObserverSourceConfig,
+    WeatherSourceConfig,
+)
 from olivaw.models import CompletionRequest, CompletionResponse
 
 
@@ -154,9 +160,11 @@ def test_weather_request_is_capability_unavailable_without_provider(monkeypatch)
     )
 
     assert result.attribution == CAPABILITY_UNAVAILABLE
-    assert result.capability == "weather source"
-    assert "do not currently have weather context available" in result.text
-    assert "Weather source status" in result.text
+    assert result.capability == "weather conditions"
+    assert "The source exists but is currently unavailable." in result.text
+    assert "I would need a source that provides weather data." in result.text
+    assert result.provenance_label == "Unavailable"
+    assert result.provenance_detail == "Weather"
 
 
 def test_exact_weather_request_is_guarded_without_provider(monkeypatch):
@@ -175,8 +183,8 @@ def test_exact_weather_request_is_guarded_without_provider(monkeypatch):
     )
 
     assert result.attribution == CAPABILITY_UNAVAILABLE
-    assert result.capability == "weather source"
-    assert "do not currently have weather context available" in result.text
+    assert result.capability == "weather conditions"
+    assert "The source exists but is currently unavailable." in result.text
     normalized = result.text.lower()
     for forbidden in FORBIDDEN_WEATHER_CLAIMS:
         assert forbidden not in normalized
@@ -233,8 +241,163 @@ def test_weather_request_uses_weather_source_when_available(monkeypatch):
     assert result.attribution == SOURCE_BACKED
     assert result.sources == ("weather",)
     assert result.capability == "weather lookup"
+    assert result.provenance_label == "Source"
+    assert result.provenance_detail == "Weather"
     assert result.text.startswith("Weather:")
     assert "Currently 72°F and clear." in result.text
+
+
+def test_network_question_uses_source_grounded_derived_response(monkeypatch, tmp_path):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("network question should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+    prime_dir = tmp_path / "prime"
+    core_dir = tmp_path / "core"
+    prime_dir.mkdir()
+    core_dir.mkdir()
+    (prime_dir / "network_attribution.json").write_text(
+        """
+{
+  "generated_at": "2026-06-17T14:23:00+00:00",
+  "current_attribution": {
+    "label": "Likely upstream (ISP / path)",
+    "status": "likely_upstream",
+    "confidence": "medium",
+    "evidence": ["WAN degraded while LAN remained healthy."]
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (core_dir / "latest.json").write_text(
+        """
+{
+  "title": "Core Signal Morning Brief",
+  "date": "2026-06-17",
+  "status": "Watch",
+  "summary": "One interpreted slowdown event is present.",
+  "recommended_action": "No action unless people noticed issues."
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = ChatCapability().run_with_attribution(
+        "How was the network overnight?",
+        config=OlivawConfig(
+            prime_observer=PrimeObserverSourceConfig(directory=prime_dir),
+            core_signal=CoreSignalSourceConfig(directory=core_dir),
+        ),
+    )
+
+    assert result.attribution == DERIVED
+    assert result.sources == ("prime_observer", "core_signal")
+    assert result.provenance_label == "Derived from"
+    assert result.provenance_detail == "Prime Observer + Core Signal"
+    assert "One interpreted slowdown event is present." in result.text
+    assert "Prime Observer reports:" in result.text
+    assert "WAN degraded while LAN remained healthy." in result.text
+
+
+def test_network_question_returns_unavailable_when_sources_cannot_answer(monkeypatch, tmp_path):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("network question should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "How was the network overnight?",
+        config=OlivawConfig(
+            prime_observer=PrimeObserverSourceConfig(directory=tmp_path / "missing-prime"),
+            core_signal=CoreSignalSourceConfig(directory=tmp_path / "missing-core"),
+        ),
+    )
+
+    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert "The source exists but is currently unavailable." in result.text
+    assert (
+        "I would need a source that provides Prime Observer evidence or Core Signal interpretation."
+        in result.text
+    )
+    assert result.provenance_label == "Unavailable"
+
+
+def test_disk_usage_question_declines_without_invented_estimate(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("disk usage question should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "What is disk usage?",
+        config=OlivawConfig(),
+    )
+
+    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.provenance_label == "Unknown"
+    assert result.provenance_detail == "No source available"
+    assert "I don't currently have a source that can answer that." in result.text
+    assert "I would need a source that provides disk utilization." in result.text
+    normalized = result.text.lower()
+    assert "estimate" not in normalized
+    assert "gb" not in normalized
+    assert "monitoring" not in normalized
+
+
+def test_memory_usage_question_declines_without_invented_telemetry(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("memory usage question should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "How much memory am I using?",
+        config=OlivawConfig(),
+    )
+
+    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert "I would need a source that provides memory utilization." in result.text
+    normalized = result.text.lower()
+    assert "estimate" not in normalized
+    assert "monitoring" not in normalized
+    assert "i've been monitoring" not in normalized
+
+
+def test_monitoring_question_declines_without_claiming_monitoring(monkeypatch):
+    class FailingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            raise AssertionError("monitoring question should not call provider")
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", FailingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "Have you been monitoring the provider?",
+        config=OlivawConfig(),
+    )
+
+    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert "I would need a source that provides monitoring telemetry." in result.text
+    assert "I've been monitoring" not in result.text
 
 
 def test_capability_question_returns_grounded_answer_without_provider(monkeypatch):

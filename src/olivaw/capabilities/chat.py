@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from olivaw.assistant.attribution import (
     CAPABILITY_UNAVAILABLE,
+    DERIVED,
     MODEL_REASONED,
     SOURCE_BACKED,
     AttributedResponse,
@@ -20,6 +21,7 @@ HEALTH_HINT = (
     "Run `olivaw health` to inspect provider status. "
     "If using Ollama, verify it is installed and running at the configured endpoint."
 )
+UNKNOWN_SOURCE_ANSWER = "I don't currently have a source that can answer that."
 
 
 @dataclass
@@ -40,18 +42,20 @@ class ChatCapability:
                 attribution=SOURCE_BACKED,
                 sources=("capability-registry",),
                 capability="capability inspection",
+                provenance_label="Source",
+                provenance_detail="Capability Registry",
             )
 
-        weather = _weather_response(prompt, resolved_config)
-        if weather is not None:
-            return weather
+        if _is_source_question(prompt):
+            return _source_status_response(resolved_config)
+
+        grounded = _grounded_operational_response(prompt, resolved_config)
+        if grounded is not None:
+            return grounded
 
         missing = _missing_capability_for_prompt(prompt)
         if missing:
             return _capability_unavailable_response(missing)
-
-        if _is_source_question(prompt):
-            return _source_status_response(resolved_config)
 
         router = RouterProvider(resolved_config)
         try:
@@ -66,11 +70,15 @@ class ChatCapability:
                 text=_format_chat_failure(exc),
                 attribution=CAPABILITY_UNAVAILABLE,
                 capability="model provider",
+                provenance_label="Unavailable",
+                provenance_detail="Model provider",
             )
         return AttributedResponse(
             text=response.text,
             attribution=MODEL_REASONED,
             capability="chat",
+            provenance_label="Reasoned",
+            provenance_detail="Model response",
         )
 
 
@@ -143,23 +151,20 @@ def _weather_response(
                     attribution=SOURCE_BACKED,
                     sources=("weather",),
                     capability="weather lookup",
+                    provenance_label="Source",
+                    provenance_detail="Weather",
                 )
         message = str(source.get("message") or "").strip()
-        details = (
-            f" Weather source status: {message}."
-            if message
-            else " Weather source data is not available right now."
-        )
-        return AttributedResponse(
-            text=(
-                "I do not currently have weather context available from Olivaw sources yet."
-                f"{details}"
-            ),
-            attribution=CAPABILITY_UNAVAILABLE,
+        return _source_unavailable_response(
+            subject="weather conditions",
+            required_source="weather data",
             sources=("weather",),
-            capability="weather source",
+            detail=message or "Weather source data is not available right now.",
         )
-    return _capability_unavailable_response("weather source")
+    return _missing_source_response(
+        subject="weather conditions",
+        required_source="weather data",
+    )
 
 
 def _is_weather_question(prompt: str) -> bool:
@@ -168,6 +173,144 @@ def _is_weather_question(prompt: str) -> bool:
         phrase in normalized
         for phrase in ("weather", "forecast", "temperature", "temp", "rain")
     )
+
+
+def _grounded_operational_response(
+    prompt: str,
+    config: OlivawConfig,
+) -> AttributedResponse | None:
+    if _is_weather_question(prompt):
+        return _weather_response(prompt, config)
+    if _is_network_question(prompt):
+        return _network_response(config)
+    limitation = _operational_limitation(prompt)
+    if limitation is not None:
+        subject, required_source = limitation
+        return _missing_source_response(
+            subject=subject,
+            required_source=required_source,
+        )
+    return None
+
+
+def _is_network_question(prompt: str) -> bool:
+    normalized = " ".join(prompt.lower().split())
+    network_phrases = (
+        "network",
+        "slowdown",
+        "latency",
+        "packet loss",
+        "connectivity",
+        "internet",
+        "wan",
+        "lan",
+        "overnight",
+        "outage",
+    )
+    return any(phrase in normalized for phrase in network_phrases)
+
+
+def _network_response(config: OlivawConfig) -> AttributedResponse:
+    aggregate = create_default_registry(config).aggregate().as_dict()
+    prime = _source_by_id(aggregate, "prime_observer")
+    core = _source_by_id(aggregate, "core_signal")
+    prime_summary = _source_summary(prime)
+    core_summary = _source_interpretation_summary(aggregate, source_id="core_signal")
+
+    if core_summary and prime_summary:
+        return AttributedResponse(
+            text=f"{core_summary} Prime Observer reports: {prime_summary}",
+            attribution=DERIVED,
+            sources=("prime_observer", "core_signal"),
+            capability="network status",
+            provenance_label="Derived from",
+            provenance_detail="Prime Observer + Core Signal",
+        )
+    if prime_summary:
+        return AttributedResponse(
+            text=f"Prime Observer: {prime_summary}",
+            attribution=SOURCE_BACKED,
+            sources=("prime_observer",),
+            capability="network status",
+            provenance_label="Source",
+            provenance_detail="Prime Observer",
+        )
+    if core_summary:
+        return AttributedResponse(
+            text=f"Core Signal: {core_summary}",
+            attribution=SOURCE_BACKED,
+            sources=("core_signal",),
+            capability="network status",
+            provenance_label="Source",
+            provenance_detail="Core Signal",
+        )
+
+    unavailable_sources = tuple(
+        source_id
+        for source_id, source in (
+            ("prime_observer", prime),
+            ("core_signal", core),
+        )
+        if str(source.get("status") or "").strip() in {"unavailable", "error"}
+    )
+    if unavailable_sources:
+        detail = _first_non_empty(
+            str(prime.get("message") or "").strip(),
+            str(core.get("message") or "").strip(),
+        )
+        return _source_unavailable_response(
+            subject="network conditions",
+            required_source="Prime Observer evidence or Core Signal interpretation",
+            sources=unavailable_sources,
+            detail=detail,
+        )
+    return _missing_source_response(
+        subject="network conditions",
+        required_source="Prime Observer evidence or Core Signal interpretation",
+    )
+
+
+def _operational_limitation(prompt: str) -> tuple[str, str] | None:
+    normalized = " ".join(prompt.lower().split())
+    patterns = (
+        (
+            ("disk", "storage"),
+            ("usage", "utilization", "space", "free", "used", "capacity"),
+            ("disk usage", "disk utilization"),
+        ),
+        (
+            ("memory", "ram"),
+            ("usage", "utilization", "using", "available", "free"),
+            ("memory usage", "memory utilization"),
+        ),
+        (
+            ("cpu",),
+            ("usage", "utilization", "load"),
+            ("cpu usage", "cpu utilization"),
+        ),
+        (
+            ("uptime", "downtime", "outage", "outages"),
+            (),
+            ("uptime or outage status", "uptime or outage telemetry"),
+        ),
+        (
+            ("monitoring", "monitored", "watching"),
+            (),
+            ("ongoing monitoring status", "monitoring telemetry"),
+        ),
+        (
+            ("provider", "infrastructure"),
+            ("status", "health", "monitoring"),
+            ("provider status", "provider telemetry"),
+        ),
+    )
+    for subject_tokens, qualifier_tokens, response in patterns:
+        if not any(token in normalized for token in subject_tokens):
+            continue
+        if qualifier_tokens and not any(token in normalized for token in qualifier_tokens):
+            continue
+        return response
+    return None
 
 
 def _source_dicts(value: object) -> list[dict[str, object]]:
@@ -199,6 +342,8 @@ def _capability_unavailable_response(capability: str) -> AttributedResponse:
         ),
         attribution=CAPABILITY_UNAVAILABLE,
         capability=capability,
+        provenance_label="Unknown",
+        provenance_detail="No source available",
     )
 
 
@@ -230,4 +375,91 @@ def _source_status_response(config: OlivawConfig) -> AttributedResponse:
         attribution=SOURCE_BACKED,
         sources=tuple(source.source_id for source in health),
         capability="source inspection",
+        provenance_label="Source",
+        provenance_detail="Registered sources",
     )
+
+
+def _missing_source_response(
+    *,
+    subject: str,
+    required_source: str,
+) -> AttributedResponse:
+    return AttributedResponse(
+        text=(
+            f"{UNKNOWN_SOURCE_ANSWER} "
+            f"I would need a source that provides {required_source}."
+        ),
+        attribution=CAPABILITY_UNAVAILABLE,
+        capability=subject,
+        provenance_label="Unknown",
+        provenance_detail="No source available",
+    )
+
+
+def _source_unavailable_response(
+    *,
+    subject: str,
+    required_source: str,
+    sources: tuple[str, ...],
+    detail: str,
+) -> AttributedResponse:
+    detail_text = f" {detail}" if detail else ""
+    return AttributedResponse(
+        text=(
+            f"The source exists but is currently unavailable. "
+            f"I would need a source that provides {required_source}.{detail_text}"
+        ),
+        attribution=CAPABILITY_UNAVAILABLE,
+        sources=sources,
+        capability=subject,
+        provenance_label="Unavailable",
+        provenance_detail=_join_source_labels(sources) or "Source unavailable",
+    )
+
+
+def _source_by_id(aggregate: dict[str, object], source_id: str) -> dict[str, object]:
+    for source in _source_dicts(aggregate.get("sources")):
+        if source.get("source_id") == source_id:
+            return source
+    return {}
+
+
+def _source_summary(source: dict[str, object]) -> str:
+    if str(source.get("status") or "").strip() != "ok":
+        return ""
+    return _weather_summary_text(source)
+
+
+def _source_interpretation_summary(
+    aggregate: dict[str, object],
+    *,
+    source_id: str,
+) -> str:
+    for item in _source_dicts(aggregate.get("interpretation_items")):
+        if item.get("source_id") != source_id:
+            continue
+        summary = str(item.get("summary") or "").strip()
+        if summary:
+            return summary
+    return ""
+
+
+def _first_non_empty(*values: str) -> str:
+    for value in values:
+        if value:
+            return value
+    return ""
+
+
+def _join_source_labels(sources: tuple[str, ...]) -> str:
+    labels = []
+    for source_id in sources:
+        labels.append(
+            {
+                "prime_observer": "Prime Observer",
+                "core_signal": "Core Signal",
+                "weather": "Weather",
+            }.get(source_id, source_id.replace("_", " ").title())
+        )
+    return " + ".join(label for label in labels if label)

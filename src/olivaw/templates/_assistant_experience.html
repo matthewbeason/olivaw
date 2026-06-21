@@ -24,6 +24,9 @@
                 {% if item.body %}
                   <p class="message-copy">{{ item.body }}</p>
                 {% endif %}
+                {% if item.provenance %}
+                  <p class="assistant-history-note">{{ item.provenance }}</p>
+                {% endif %}
               </div>
 
               {% if item.capsules %}

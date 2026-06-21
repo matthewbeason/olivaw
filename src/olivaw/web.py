@@ -24,6 +24,7 @@ from olivaw.actions import (
     create_builtin_action_registry,
     execute_action,
 )
+from olivaw.assistant.attribution import AttributedResponse
 from olivaw.briefing import compose_briefing, compose_source_briefing
 from olivaw.briefing.health_review import generate_health_review
 from olivaw.briefing.schemas import DailyContext, Priority, ProjectState, Signal
@@ -105,6 +106,7 @@ _ASSISTANT_SESSIONS: dict[str, AssistantSessionState] = {}
 class AssistantConversationTurn:
     prompt: str = ""
     response: str | None = None
+    attributed_response: AttributedResponse | None = None
     suggested_action: dict[str, object] | None = None
     action_result: object | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -186,11 +188,13 @@ def chat_submit(request: Request, prompt: str = Form(...)):
         _set_assistant_session_cookie(response, session_id, set_cookie=is_new)
         return response
 
-    message = ChatCapability().run_with_attribution(prompt).text
+    attributed = ChatCapability().run_with_attribution(prompt)
+    message = attributed.text
     _store_assistant_interaction(
         session_state,
         prompt=prompt,
         response=message,
+        attributed_response=attributed,
     )
     response = _template_response(
         request,
@@ -454,6 +458,7 @@ def _store_assistant_interaction(
     *,
     prompt: str,
     response: str | None = None,
+    attributed_response: AttributedResponse | None = None,
     suggested_action: dict[str, object] | None = None,
     action_result: object | None = None,
 ) -> None:
@@ -462,6 +467,7 @@ def _store_assistant_interaction(
         AssistantConversationTurn(
             prompt=prompt,
             response=response,
+            attributed_response=attributed_response,
             suggested_action=(
                 dict(suggested_action) if suggested_action is not None else None
             ),
@@ -683,6 +689,7 @@ def _assistant_timeline(
                     "role": "assistant",
                     "speaker": "Olivaw",
                     "body": turn.response or "",
+                    "provenance": _assistant_response_provenance(turn.attributed_response),
                     "capsules": capsules,
                 }
             )
@@ -823,6 +830,18 @@ def _assistant_mentions_diagnostics(prompt: str, response: str) -> bool:
 
 def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase in text for phrase in phrases)
+
+
+def _assistant_response_provenance(
+    response: AttributedResponse | None,
+) -> str:
+    if response is None:
+        return ""
+    label = str(getattr(response, "provenance_label", "") or "").strip()
+    detail = str(getattr(response, "provenance_detail", "") or "").strip()
+    if label and detail:
+        return f"{label}: {detail}"
+    return label or detail
 
 
 def _context_card(
