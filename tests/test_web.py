@@ -2648,7 +2648,7 @@ def test_chat_post_handles_unavailable_capability_without_provider(monkeypatch):
 
     assert response.status_code == 200
     assert "The source exists but is currently unavailable." in response.text
-    assert "Unavailable: Weather" in response.text
+    assert "Knowledge mode: Unavailable source-backed state" in response.text
     assert 'data-card-kind="weather"' not in response.text
 
 
@@ -3073,9 +3073,9 @@ def test_chat_post_renders_provenance_for_source_grounded_unknown_response(monke
     response = client.post("/chat", data={"prompt": "What is disk usage?"})
 
     assert response.status_code == 200
-    assert "No source available" in response.text
+    assert "source that can answer that" in response.text
     assert "disk utilization" in response.text
-    assert "Unknown: No source available" in response.text
+    assert "Knowledge mode: Unknown operational state" in response.text
 
 
 def test_settings_does_not_expose_secret(monkeypatch):

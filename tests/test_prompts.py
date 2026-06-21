@@ -27,4 +27,7 @@ def test_prompt_builder_warns_against_claiming_unimplemented_capabilities():
     assert "Source aggregation" in prompt
     assert "Do not claim unavailable capabilities." in prompt
     assert 'Say "not implemented yet" when asked about missing features.' in prompt
+    assert "For general knowledge, answer from model knowledge without naming registered sources." in prompt
+    assert "Do not claim Prime Observer, Core Signal, Weather, or any registered source supplied a generic answer unless Olivaw actually used that source." in prompt
+    assert "For current operational state, do not guess if no registered source supplied it." in prompt
     assert "Avoid speculation about your own implementation." in prompt

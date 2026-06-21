@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from olivaw.assistant.attribution import (
-    CAPABILITY_UNAVAILABLE,
     DERIVED,
-    MODEL_REASONED,
+    MODEL_KNOWLEDGE,
+    MODEL_UNAVAILABLE,
     SOURCE_BACKED,
     AttributedResponse,
+    UNKNOWN_OPERATIONAL_STATE,
+    UNAVAILABLE_SOURCE_BACKED,
 )
 from olivaw.assistant.capability_registry import create_capability_registry
 
@@ -25,10 +27,12 @@ def test_attributed_response_carries_internal_metadata():
 
 
 def test_attribution_states_are_stable_strings():
-    assert SOURCE_BACKED.value == "source-backed"
+    assert SOURCE_BACKED.value == "source_backed"
     assert DERIVED.value == "derived"
-    assert MODEL_REASONED.value == "model-reasoned"
-    assert CAPABILITY_UNAVAILABLE.value == "capability-unavailable"
+    assert MODEL_KNOWLEDGE.value == "model_knowledge"
+    assert UNKNOWN_OPERATIONAL_STATE.value == "unknown_operational_state"
+    assert UNAVAILABLE_SOURCE_BACKED.value == "unavailable_source_backed"
+    assert MODEL_UNAVAILABLE.value == "model_unavailable"
 
 
 def test_capability_registry_tracks_current_and_planned_sources():

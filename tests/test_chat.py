@@ -6,10 +6,12 @@ import urllib.error
 import pytest
 
 from olivaw.assistant.attribution import (
-    CAPABILITY_UNAVAILABLE,
     DERIVED,
-    MODEL_REASONED,
+    MODEL_KNOWLEDGE,
+    MODEL_UNAVAILABLE,
     SOURCE_BACKED,
+    UNKNOWN_OPERATIONAL_STATE,
+    UNAVAILABLE_SOURCE_BACKED,
 )
 from olivaw.capabilities.chat import ChatCapability
 from olivaw.config import OlivawConfig
@@ -82,7 +84,7 @@ def test_provider_failure_is_attributed_as_unavailable(monkeypatch):
 
     result = ChatCapability().run_with_attribution("hello", config=OlivawConfig())
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.attribution == MODEL_UNAVAILABLE
     assert result.capability == "model provider"
     assert result.text.startswith("Chat provider unavailable:")
 
@@ -118,7 +120,7 @@ def test_chat_sends_identity_context_to_provider(monkeypatch):
     assert "Distinguish source-backed facts from model reasoning." in request.system_prompt
 
 
-def test_reasoning_request_calls_provider_and_is_model_reasoned(monkeypatch):
+def test_reasoning_request_calls_provider_and_is_model_knowledge(monkeypatch):
     captured: dict[str, CompletionRequest] = {}
 
     class CapturingRouter:
@@ -140,9 +142,34 @@ def test_reasoning_request_calls_provider_and_is_model_reasoned(monkeypatch):
     )
 
     assert captured["request"].prompt == "Explain local-first architecture."
-    assert result.attribution == MODEL_REASONED
+    assert result.attribution == MODEL_KNOWLEDGE
     assert result.capability == "chat"
     assert "local systems are preferred" in result.text
+    assert result.provenance_label == "Knowledge mode"
+    assert result.provenance_detail == "Model knowledge"
+
+
+def test_general_knowledge_request_stays_model_knowledge(monkeypatch):
+    class CapturingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            return CompletionResponse(
+                text="You have power over your mind, not outside events.",
+                provider="test",
+                model="test-model",
+            )
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", CapturingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "Give me a Marcus Aurelius quote.", config=OlivawConfig()
+    )
+
+    assert result.attribution == MODEL_KNOWLEDGE
+    assert result.provenance_label == "Knowledge mode"
+    assert result.provenance_detail == "Model knowledge"
 
 
 def test_weather_request_is_capability_unavailable_without_provider(monkeypatch):
@@ -159,12 +186,12 @@ def test_weather_request_is_capability_unavailable_without_provider(monkeypatch)
         "What's the weather in Phoenix?", config=OlivawConfig()
     )
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.attribution == UNAVAILABLE_SOURCE_BACKED
     assert result.capability == "weather conditions"
     assert "The source exists but is currently unavailable." in result.text
     assert "I would need a source that provides weather data." in result.text
-    assert result.provenance_label == "Unavailable"
-    assert result.provenance_detail == "Weather"
+    assert result.provenance_label == "Knowledge mode"
+    assert result.provenance_detail == "Unavailable source-backed state"
 
 
 def test_exact_weather_request_is_guarded_without_provider(monkeypatch):
@@ -182,7 +209,7 @@ def test_exact_weather_request_is_guarded_without_provider(monkeypatch):
         config=OlivawConfig(),
     )
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.attribution == UNAVAILABLE_SOURCE_BACKED
     assert result.capability == "weather conditions"
     assert "The source exists but is currently unavailable." in result.text
     normalized = result.text.lower()
@@ -322,13 +349,14 @@ def test_network_question_returns_unavailable_when_sources_cannot_answer(monkeyp
         ),
     )
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.attribution == UNAVAILABLE_SOURCE_BACKED
     assert "The source exists but is currently unavailable." in result.text
     assert (
         "I would need a source that provides Prime Observer evidence or Core Signal interpretation."
         in result.text
     )
-    assert result.provenance_label == "Unavailable"
+    assert result.provenance_label == "Knowledge mode"
+    assert result.provenance_detail == "Unavailable source-backed state"
 
 
 def test_disk_usage_question_declines_without_invented_estimate(monkeypatch):
@@ -346,9 +374,9 @@ def test_disk_usage_question_declines_without_invented_estimate(monkeypatch):
         config=OlivawConfig(),
     )
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
-    assert result.provenance_label == "Unknown"
-    assert result.provenance_detail == "No source available"
+    assert result.attribution == UNKNOWN_OPERATIONAL_STATE
+    assert result.provenance_label == "Knowledge mode"
+    assert result.provenance_detail == "Unknown operational state"
     assert "I don't currently have a source that can answer that." in result.text
     assert "I would need a source that provides disk utilization." in result.text
     normalized = result.text.lower()
@@ -372,7 +400,7 @@ def test_memory_usage_question_declines_without_invented_telemetry(monkeypatch):
         config=OlivawConfig(),
     )
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.attribution == UNKNOWN_OPERATIONAL_STATE
     assert "I would need a source that provides memory utilization." in result.text
     normalized = result.text.lower()
     assert "estimate" not in normalized
@@ -395,7 +423,7 @@ def test_monitoring_question_declines_without_claiming_monitoring(monkeypatch):
         config=OlivawConfig(),
     )
 
-    assert result.attribution == CAPABILITY_UNAVAILABLE
+    assert result.attribution == UNKNOWN_OPERATIONAL_STATE
     assert "I would need a source that provides monitoring telemetry." in result.text
     assert "I've been monitoring" not in result.text
 

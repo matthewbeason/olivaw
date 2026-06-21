@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from olivaw.assistant.attribution import (
-    CAPABILITY_UNAVAILABLE,
     DERIVED,
-    MODEL_REASONED,
+    MODEL_KNOWLEDGE,
+    MODEL_UNAVAILABLE,
     SOURCE_BACKED,
     AttributedResponse,
+    UNKNOWN_OPERATIONAL_STATE,
+    UNAVAILABLE_SOURCE_BACKED,
 )
 from olivaw.assistant.capability_registry import create_capability_registry
 from olivaw.assistant.identity import capabilities_summary
@@ -68,17 +70,17 @@ class ChatCapability:
         except Exception as exc:
             return AttributedResponse(
                 text=_format_chat_failure(exc),
-                attribution=CAPABILITY_UNAVAILABLE,
+                attribution=MODEL_UNAVAILABLE,
                 capability="model provider",
                 provenance_label="Unavailable",
                 provenance_detail="Model provider",
             )
         return AttributedResponse(
-            text=response.text,
-            attribution=MODEL_REASONED,
+            text=_sanitize_model_knowledge_response(response.text),
+            attribution=MODEL_KNOWLEDGE,
             capability="chat",
-            provenance_label="Reasoned",
-            provenance_detail="Model response",
+            provenance_label="Knowledge mode",
+            provenance_detail="Model knowledge",
         )
 
 
@@ -340,10 +342,10 @@ def _capability_unavailable_response(capability: str) -> AttributedResponse:
             f"I do not currently have a {capability} configured, so I cannot "
             f"answer that from Olivaw sources yet.{suffix}"
         ),
-        attribution=CAPABILITY_UNAVAILABLE,
+        attribution=UNKNOWN_OPERATIONAL_STATE,
         capability=capability,
-        provenance_label="Unknown",
-        provenance_detail="No source available",
+        provenance_label="Knowledge mode",
+        provenance_detail="Unknown operational state",
     )
 
 
@@ -390,10 +392,10 @@ def _missing_source_response(
             f"{UNKNOWN_SOURCE_ANSWER} "
             f"I would need a source that provides {required_source}."
         ),
-        attribution=CAPABILITY_UNAVAILABLE,
+        attribution=UNKNOWN_OPERATIONAL_STATE,
         capability=subject,
-        provenance_label="Unknown",
-        provenance_detail="No source available",
+        provenance_label="Knowledge mode",
+        provenance_detail="Unknown operational state",
     )
 
 
@@ -410,11 +412,11 @@ def _source_unavailable_response(
             f"The source exists but is currently unavailable. "
             f"I would need a source that provides {required_source}.{detail_text}"
         ),
-        attribution=CAPABILITY_UNAVAILABLE,
+        attribution=UNAVAILABLE_SOURCE_BACKED,
         sources=sources,
         capability=subject,
-        provenance_label="Unavailable",
-        provenance_detail=_join_source_labels(sources) or "Source unavailable",
+        provenance_label="Knowledge mode",
+        provenance_detail="Unavailable source-backed state",
     )
 
 
@@ -463,3 +465,28 @@ def _join_source_labels(sources: tuple[str, ...]) -> str:
             }.get(source_id, source_id.replace("_", " ").title())
         )
     return " + ".join(label for label in labels if label)
+
+
+def _sanitize_model_knowledge_response(text: str) -> str:
+    stripped = text.strip()
+    lowered = stripped.lower()
+    if not stripped:
+        return stripped
+
+    fake_source_markers = (
+        "source:",
+        "derived from:",
+        "prime observer:",
+        "core signal:",
+        "weather:",
+        "according to prime observer",
+        "according to core signal",
+        "prime observer reports",
+        "core signal reports",
+    )
+    if any(marker in lowered for marker in fake_source_markers):
+        return (
+            "This answer is from model knowledge, not from a registered Olivaw source.\n\n"
+            f"{stripped}"
+        )
+    return stripped
