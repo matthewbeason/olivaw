@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, replace
 
@@ -107,7 +108,10 @@ class ChatCapability:
             )
         return _with_chat_metrics(
             AttributedResponse(
-                text=_sanitize_model_knowledge_response(response.text),
+                text=_sanitize_model_knowledge_response(
+                    response.text,
+                    protected_terms=_registered_provenance_terms(resolved_config),
+                ),
                 attribution=MODEL_KNOWLEDGE,
                 capability="chat",
                 provenance_label="Knowledge mode",
@@ -547,29 +551,197 @@ def _join_source_labels(sources: tuple[str, ...]) -> str:
     return " + ".join(label for label in labels if label)
 
 
-def _sanitize_model_knowledge_response(text: str) -> str:
+def _registered_provenance_terms(config: OlivawConfig) -> tuple[str, ...]:
+    registry = create_default_registry(config)
+    terms: list[str] = []
+    for source in registry.list_sources():
+        terms.extend(
+            (
+                source.source_id,
+                source.source_id.replace("_", " "),
+                source.source_id.replace("_", " ").title(),
+                source.display_name,
+                type(source).__name__,
+            )
+        )
+    capability_registry = create_capability_registry(
+        implemented_sources=tuple(source.source_id for source in registry.list_sources())
+    )
+    terms.extend(capability_registry.planned_sources)
+    terms.extend(("Action Registry", "action-registry"))
+    return tuple(dict.fromkeys(term for term in terms if term.strip()))
+
+
+def _sanitize_model_knowledge_response(
+    text: str,
+    *,
+    protected_terms: tuple[str, ...] = (),
+) -> str:
     stripped = text.strip()
-    lowered = stripped.lower()
     if not stripped:
         return stripped
 
-    fake_source_markers = (
-        "source:",
-        "derived from:",
-        "prime observer:",
-        "core signal:",
-        "weather:",
-        "according to prime observer",
-        "according to core signal",
-        "prime observer reports",
-        "core signal reports",
+    sanitized = stripped
+    sanitized = re.sub(
+        r"\s*\((?:via|from|source:|according to|derived from)\s+[^)]*\)",
+        "",
+        sanitized,
+        flags=re.IGNORECASE,
     )
-    if any(marker in lowered for marker in fake_source_markers):
-        return (
-            "This answer is from model knowledge, not from a registered Olivaw source.\n\n"
-            f"{stripped}"
+    sanitized = re.sub(
+        r"\s*\([^)]*\b(?:sourced|source|provider|model knowledge|"
+        r"knowledge[- ]base|access to)[^)]*\)",
+        "",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+    sanitized = re.sub(
+        r"(?im)^[ \t]*(?:source-backed fact|source backed fact|source fact|"
+        r"source-backed|source backed|sourced-backed|sourced backed|"
+        r"from registered sources|"
+        r"according to registered sources)[ \t:]+",
+        "",
+        sanitized,
+    )
+    sanitized = _remove_generic_provenance_claims(sanitized)
+    sanitized = re.sub(
+        r"\b(?:source-backed|source backed|sourced-backed|sourced backed)\b\s*",
+        "",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+    if protected_terms:
+        term_pattern = "|".join(
+            re.escape(term)
+            for term in sorted(protected_terms, key=len, reverse=True)
+            if term.strip()
         )
-    return stripped
+        sanitized = _remove_provenance_claims(sanitized, term_pattern)
+        sanitized = _remove_residual_internal_source_names(sanitized, protected_terms)
+    sanitized = re.sub(r"[ \t]+\n", "\n", sanitized)
+    sanitized = re.sub(r"(?<=[.!?])(?=[A-Z])", " ", sanitized)
+    sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+    sanitized = re.sub(r" {2,}", " ", sanitized)
+    return sanitized.strip()
+
+
+def _remove_generic_provenance_claims(text: str) -> str:
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\b(?:no access to|do not have access to|don't have access to|"
+        r"do not have direct access to|don't have direct access to|"
+        r"does not have access to|has access to|have access to|"
+        r"accessed this knowledge)\b"
+        r"[^.!?\n]*\b(?:sources?|databases?|records?|knowledge[- ]bases?|"
+        r"tools?|texts?|providers?|model information|registered sources?)\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        text,
+    )
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\bno specific (?:sources?|tools?|providers?|databases?)\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\b(?:generated|generate|referencing|reference|citing|cite|"
+        r"from my knowledge[- ]base|from a knowledge[- ]base)\b"
+        r"[^.!?\n]*\b(?:sources?|knowledge[- ]bases?|model knowledge)\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\b(?:based on my model knowledge|from my model knowledge|"
+        r"uses model knowledge|drawn from model knowledge|"
+        r"based on model knowledge)\b[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\bgeneral information based on model knowledge\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\bmy knowledge\b[^.!?\n]*\b"
+        r"(?:based on|sourced|sources?|providers?|databases?)\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"(?:this is|this answer is|this overview is)[^.!?\n]*\b"
+        r"(?:source-backed|source backed|sourced-backed|sourced backed)\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+    return re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"[^.!?\n]*\b(?:rely on my knowledge|from my knowledge)\b"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        sanitized,
+    )
+
+
+def _remove_provenance_claims(text: str, term_pattern: str) -> str:
+    line_provenance = re.compile(
+        rf"(?im)^[ \t]*(?:source|sources|via|derived from|attribution)"
+        rf"[ \t:]+(?:[^\n]*\b(?:{term_pattern})\b[^\n]*)(?:\n|$)"
+    )
+    sanitized = line_provenance.sub("", text)
+    leading_claims = (
+        rf"\bAccording to\s+(?:the\s+)?(?:{term_pattern})[,:]?\s*",
+        rf"\bBased on\s+(?:the\s+)?(?:{term_pattern})[,:]?\s*",
+        rf"\bFrom\s+(?:the\s+)?(?:{term_pattern})[,:]?\s*",
+        rf"\bUsing\s+(?:the\s+)?(?:{term_pattern})[,:]?\s*",
+        rf"\b(?:{term_pattern})\s+(?:reports|report|says|states|indicates|shows|"
+        rf"provided|provides|supplied|supplies|confirms|notes)(?:\s+that)?[,:]?\s*",
+    )
+    for pattern in leading_claims:
+        sanitized = re.sub(pattern, "", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(
+        rf"\s+\bvia\s+(?:the\s+)?(?:{term_pattern})\b",
+        "",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+    return sanitized
+
+
+def _remove_residual_internal_source_names(
+    text: str,
+    protected_terms: tuple[str, ...],
+) -> str:
+    sanitized = text
+    residual_terms = [
+        term
+        for term in protected_terms
+        if (
+            term.endswith("Source")
+            or "_" in term
+            or "-" in term
+            or term in {"Prime Observer", "Core Signal", "Action Registry"}
+        )
+    ]
+    for term in sorted(residual_terms, key=len, reverse=True):
+        sanitized = re.sub(
+            rf"\b{re.escape(term)}\b",
+            "",
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+    return sanitized
 
 
 def _with_chat_metrics(

@@ -13,7 +13,7 @@ from olivaw.assistant.attribution import (
     UNKNOWN_OPERATIONAL_STATE,
     UNAVAILABLE_SOURCE_BACKED,
 )
-from olivaw.capabilities.chat import ChatCapability
+from olivaw.capabilities.chat import ChatCapability, _sanitize_model_knowledge_response
 from olivaw.config import OlivawConfig
 from olivaw.config import (
     CoreSignalSourceConfig,
@@ -180,6 +180,150 @@ def test_general_knowledge_request_stays_model_knowledge(monkeypatch):
     assert result.attribution == MODEL_KNOWLEDGE
     assert result.provenance_label == "Knowledge mode"
     assert result.provenance_detail == "Model knowledge"
+
+
+MODEL_KNOWLEDGE_LEAK_CASES = (
+    (
+        "Give me a quote from Marcus Aurelius.",
+        (
+            "You have power over your mind, not outside events. "
+            "Olivaw's model has access to a broad range of philosophical texts. "
+            "(via PrimeObserverSource)"
+        ),
+        "You have power over your mind, not outside events.",
+    ),
+    (
+        "Give me a quote from Heraclitus.",
+        (
+            "No access to external sources for quotes. "
+            "No man steps into the same river twice. "
+            "(Olivaw sourced this from local Ollama provider.) "
+            "This quote is drawn from model knowledge. I accessed this knowledge "
+            "through general model information. Olivaw has no specific source or "
+            "tool to provide more context."
+        ),
+        "No man steps into the same river twice.",
+    ),
+    (
+        "What is Stoicism?",
+        (
+            "According to Core Signal, Stoicism is a Hellenistic philosophy focused "
+            "on virtue.\nSource-backed fact: Stoicism originated in ancient Greece. "
+            "I've generated this response from my knowledge base, without "
+            "referencing any specific source. This overview is based on my model "
+            "knowledge. I can provide general information based on model knowledge."
+        ),
+        (
+            "Stoicism is a Hellenistic philosophy focused on virtue.\n"
+            "Stoicism originated in ancient Greece."
+        ),
+    ),
+    (
+        "Explain Buddhism.",
+        (
+            "Prime Observer reports that Buddhism is a family of traditions centered "
+            "on awakening. Olivaw has access to various sources on Buddhism. "
+            "This is a sourced-backed overview."
+        ),
+        "Buddhism is a family of traditions centered on awakening.",
+    ),
+    (
+        "How do sourdough starters work?",
+        (
+            "I'll rely on my knowledge to explain the basics. "
+            "WeatherSource reports that a sourdough starter is a culture of wild "
+            "yeast and bacteria. Olivaw uses model knowledge to provide this "
+            "information. My knowledge is based on general information, not sourced "
+            "from any specific provider or database. Not implemented yet: I can "
+            "provide general knowledge but do not have direct access to registered "
+            "sources like for specific data."
+        ),
+        "a sourdough starter is a culture of wild yeast and bacteria.",
+    ),
+    (
+        "Explain Python decorators.",
+        "Source: CoreSignalSource\nPython decorators wrap a function with another callable.",
+        "Python decorators wrap a function with another callable.",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("prompt", "provider_text", "expected_text"),
+    MODEL_KNOWLEDGE_LEAK_CASES,
+)
+def test_model_knowledge_response_removes_fake_provenance(
+    monkeypatch,
+    prompt,
+    provider_text,
+    expected_text,
+):
+    class CapturingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            return CompletionResponse(
+                text=provider_text,
+                provider="test",
+                model="test-model",
+            )
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", CapturingRouter)
+
+    result = ChatCapability().run_with_attribution(prompt, config=OlivawConfig())
+
+    assert result.attribution == MODEL_KNOWLEDGE
+    assert result.provenance_label == "Knowledge mode"
+    assert result.provenance_detail == "Model knowledge"
+    assert result.text == expected_text
+    _assert_no_source_leakage(result.text)
+
+
+def test_model_knowledge_sanitizer_covers_future_registered_source_names():
+    text = (
+        "According to FutureTelemetrySource, decorators replace a function.\n"
+        "Source: future_telemetry\n"
+        "They usually return a wrapped callable."
+    )
+
+    result = _sanitize_model_knowledge_response(
+        text,
+        protected_terms=(
+            "future_telemetry",
+            "Future Telemetry",
+            "FutureTelemetrySource",
+        ),
+    )
+
+    assert result == "decorators replace a function.\nThey usually return a wrapped callable."
+    assert "FutureTelemetrySource" not in result
+    assert "future_telemetry" not in result
+
+
+def _assert_no_source_leakage(text: str) -> None:
+    forbidden = (
+        "PrimeObserverSource",
+        "Prime Observer",
+        "CoreSignalSource",
+        "Core Signal",
+        "WeatherSource",
+        "Action Registry",
+        "external sources",
+        "access to various sources",
+        "knowledge base",
+        "model knowledge",
+        "specific source",
+        "registered sources",
+        "direct access",
+        "provider",
+        "source:",
+        "derived from:",
+        "(via",
+    )
+    lowered = text.lower()
+    for phrase in forbidden:
+        assert phrase.lower() not in lowered
 
 
 def test_weather_request_is_capability_unavailable_without_provider(monkeypatch):
