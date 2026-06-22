@@ -16,8 +16,10 @@ from olivaw.assistant.attribution import (
 from olivaw.capabilities.chat import ChatCapability, _sanitize_model_knowledge_response
 from olivaw.config import OlivawConfig
 from olivaw.config import (
+    CloudProviderConfig,
     CoreSignalSourceConfig,
     FileSourceConfig,
+    PolicyConfig,
     PrimeObserverSourceConfig,
     WeatherSourceConfig,
 )
@@ -133,6 +135,8 @@ def test_reasoning_request_calls_provider_and_is_model_knowledge(monkeypatch):
                 text="local-first means local systems are preferred",
                 provider="test",
                 model="test-model",
+                provider_kind="local",
+                local_model_call_count=1,
                 request_duration_ms=123,
                 ollama_total_duration_ms=120,
                 prompt_eval_count=10,
@@ -156,7 +160,82 @@ def test_reasoning_request_calls_provider_and_is_model_knowledge(monkeypatch):
     assert result.metrics["ollama_total_duration_ms"] == 120
     assert result.metrics["prompt_eval_count"] == 10
     assert result.metrics["eval_count"] == 20
+    assert result.metrics["local_model_call_count"] == 1
+    assert result.metrics["cloud_model_call_count"] == 0
+    assert result.metrics["cloud_fallback_eligible"] is False
     assert result.metrics["time_to_first_token_ms"] is None
+
+
+def test_explicit_best_model_intent_marks_model_request_cloud_eligible(monkeypatch):
+    captured: dict[str, CompletionRequest] = {}
+
+    class CapturingRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            captured["request"] = request
+            return CompletionResponse(
+                text="local answer",
+                provider="ollama",
+                model="local-test",
+                provider_kind="local",
+                local_model_call_count=1,
+            )
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", CapturingRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "Review this architecture. Use the best model.",
+        config=OlivawConfig(policy=PolicyConfig(cloud_fallback="manual-only")),
+    )
+
+    assert captured["request"].cloud_fallback_allowed is True
+    assert captured["request"].cloud_fallback_reason == "use_best_model"
+    assert result.provenance_label == "Knowledge mode"
+    assert result.metrics["cloud_fallback_mode"] == "manual-only"
+    assert result.metrics["cloud_fallback_eligible"] is True
+    assert result.metrics["fallback_reason"] == "use_best_model"
+    assert result.metrics["local_model_call_count"] == 1
+    assert result.metrics["cloud_model_call_count"] == 0
+
+
+def test_think_harder_cloud_fallback_renders_cloud_assist_attribution(monkeypatch):
+    class CloudRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            assert request.cloud_fallback_allowed is True
+            assert request.cloud_fallback_reason == "think_harder_requested"
+            return CompletionResponse(
+                text="cloud assisted answer",
+                provider="openai",
+                model="gpt-test",
+                provider_kind="cloud",
+                fallback_reason="think_harder_requested",
+                local_model_call_count=1,
+                cloud_model_call_count=1,
+            )
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", CloudRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "Explain Stoicism. Think harder.",
+        config=OlivawConfig(
+            cloud=CloudProviderConfig(enabled=True, api_key="x"),
+            policy=PolicyConfig(cloud_fallback="manual-only"),
+        ),
+    )
+
+    assert result.text == "cloud assisted answer"
+    assert result.provenance_label == "Cloud assist"
+    assert result.provenance_detail == "Model knowledge"
+    assert result.metrics["response_provider"] == "openai"
+    assert result.metrics["response_provider_kind"] == "cloud"
+    assert result.metrics["fallback_reason"] == "think_harder_requested"
+    assert result.metrics["local_model_call_count"] == 1
+    assert result.metrics["cloud_model_call_count"] == 1
 
 
 def test_general_knowledge_request_stays_model_knowledge(monkeypatch):
@@ -425,6 +504,9 @@ def test_weather_request_uses_weather_source_when_available(monkeypatch):
     assert result.provenance_label == "Source"
     assert result.provenance_detail == "Weather"
     assert result.metrics["model_invoked"] is False
+    assert result.metrics["local_model_call_count"] == 0
+    assert result.metrics["cloud_model_call_count"] == 0
+    assert result.metrics["cloud_fallback_eligible"] is False
     assert result.metrics["source_retrieval_duration_ms"] >= 0
     assert result.metrics["total_request_duration_ms"] >= 0
     assert result.text.startswith("Weather:")
@@ -535,6 +617,9 @@ def test_disk_usage_question_declines_without_invented_estimate(monkeypatch):
     assert result.provenance_label == "Knowledge mode"
     assert result.provenance_detail == "Unknown operational state"
     assert result.metrics["model_invoked"] is False
+    assert result.metrics["local_model_call_count"] == 0
+    assert result.metrics["cloud_model_call_count"] == 0
+    assert result.metrics["cloud_fallback_eligible"] is False
     assert result.metrics["prompt_construction_duration_ms"] == 0
     assert "I don't currently have a source that can answer that." in result.text
     assert "I would need a source that provides disk utilization." in result.text

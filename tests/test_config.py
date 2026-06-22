@@ -55,7 +55,8 @@ def test_defaults_are_local_first_when_implicit_config_is_missing(
     assert config.local.num_ctx == 4096
     assert config.local.num_predict == 128
     assert config.cloud.enabled is False
-    assert config.policy.cloud_fallback == "disabled"
+    assert config.policy.cloud_fallback == "manual-only"
+    assert config.policy.cloud_fallback_mode == "manual-only"
     assert config.config_path == default_user_config_path()
     assert config.config_file_exists is False
 
@@ -109,12 +110,44 @@ openai_api_key = "config-secret"
     assert config.cloud.model == "gpt-4.1"
     assert config.cloud.api_key == "config-secret"
     assert config.policy.cloud_fallback == "enabled"
+    assert config.policy.cloud_fallback_mode == "automatic"
     assert config.prime_observer.directory == tmp_path / "prime-observer" / "viz"
     assert config.prime_observer.enabled is True
     assert config.prime_observer.base_url == "http://127.0.0.1:8766"
     assert config.core_signal.directory == tmp_path / "core-signal" / "reports"
     assert config.core_signal.enabled is True
     assert config.weather.enabled is False
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected_mode"),
+    [
+        ("disabled", "disabled"),
+        ("manual-only", "manual-only"),
+        ("manual_only", "manual-only"),
+        ("automatic", "automatic"),
+        ("enabled", "automatic"),
+    ],
+)
+def test_cloud_fallback_policy_modes_normalize(
+    monkeypatch, tmp_path, configured, expected_mode
+):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = default_user_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        f"""
+[policy]
+cloud_fallback = "{configured}"
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config()
+
+    assert config.policy.cloud_fallback == configured
+    assert config.policy.cloud_fallback_mode == expected_mode
 
 
 def test_environment_overrides_user_config_values_and_secrets(monkeypatch, tmp_path):

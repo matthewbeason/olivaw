@@ -85,11 +85,14 @@ class ChatCapability:
         system_prompt = build_chat_system_prompt()
         prompt_construction_duration_ms = _elapsed_ms(prompt_started)
         model_started = time.perf_counter()
+        cloud_intent = _cloud_fallback_intent(prompt)
         try:
             response = router.complete(
                 CompletionRequest(
                     prompt=prompt,
                     system_prompt=system_prompt,
+                    cloud_fallback_allowed=cloud_intent is not None,
+                    cloud_fallback_reason=cloud_intent,
                 )
             )
         except Exception as exc:
@@ -105,7 +108,11 @@ class ChatCapability:
                 model_invoked=True,
                 prompt_construction_duration_ms=prompt_construction_duration_ms,
                 model_request_duration_ms=_elapsed_ms(model_started),
+                cloud_fallback_mode=resolved_config.policy.cloud_fallback_mode,
+                cloud_fallback_eligible=cloud_intent is not None,
+                fallback_reason=cloud_intent,
             )
+        used_cloud = response.provider_kind == "cloud"
         return _with_chat_metrics(
             AttributedResponse(
                 text=_sanitize_model_knowledge_response(
@@ -114,7 +121,7 @@ class ChatCapability:
                 ),
                 attribution=MODEL_KNOWLEDGE,
                 capability="chat",
-                provenance_label="Knowledge mode",
+                provenance_label="Cloud assist" if used_cloud else "Knowledge mode",
                 provenance_detail="Model knowledge",
             ),
             started,
@@ -129,6 +136,13 @@ class ChatCapability:
             ollama_eval_duration_ms=response.ollama_eval_duration_ms,
             prompt_eval_count=response.prompt_eval_count,
             eval_count=response.eval_count,
+            response_provider=response.provider,
+            response_provider_kind=response.provider_kind,
+            local_model_call_count=response.local_model_call_count,
+            cloud_model_call_count=response.cloud_model_call_count,
+            cloud_fallback_mode=resolved_config.policy.cloud_fallback_mode,
+            cloud_fallback_eligible=cloud_intent is not None,
+            fallback_reason=response.fallback_reason or cloud_intent,
         )
 
 
@@ -138,6 +152,34 @@ def _format_chat_failure(exc: Exception) -> str:
         "Chat provider unavailable: "
         f"{type(exc).__name__}: {detail}. {HEALTH_HINT}"
     )
+
+
+def _cloud_fallback_intent(prompt: str) -> str | None:
+    normalized = " ".join(prompt.lower().split())
+    intent_phrases = (
+        ("use_best_model", ("use the best model", "best available model")),
+        ("cloud_assistance_requested", ("use cloud assistance", "cloud assist")),
+        ("deeper_analysis_requested", ("deeper analysis", "analyze more deeply")),
+        ("think_harder_requested", ("think harder", "reason harder")),
+        ("higher_confidence_requested", ("higher confidence", "more confidence")),
+    )
+    for reason, phrases in intent_phrases:
+        if any(phrase in normalized for phrase in phrases):
+            return reason
+    if _complex_reasoning_prompt(normalized):
+        return "complex_reasoning_prompt"
+    return None
+
+
+def _complex_reasoning_prompt(normalized_prompt: str) -> bool:
+    review_terms = (
+        "architecture review",
+        "design review",
+        "review this architecture",
+        "long-form synthesis",
+        "synthesize",
+    )
+    return any(term in normalized_prompt for term in review_terms)
 
 
 def _action_suggestion_response(prompt: str) -> AttributedResponse | None:
@@ -755,6 +797,10 @@ def _with_chat_metrics(
         "total_request_duration_ms": _elapsed_ms(started),
         "time_to_first_token_ms": None,
         "model_invoked": model_invoked,
+        "local_model_call_count": 0,
+        "cloud_model_call_count": 0,
+        "cloud_fallback_mode": "not_applicable",
+        "cloud_fallback_eligible": False,
         "prompt_construction_duration_ms": metrics.pop(
             "prompt_construction_duration_ms", 0
         ),

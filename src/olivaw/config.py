@@ -44,11 +44,24 @@ class CloudProviderConfig:
 
 @dataclass(frozen=True)
 class PolicyConfig:
-    cloud_fallback: str = "disabled"
+    cloud_fallback: str = "manual-only"
+
+    @property
+    def cloud_fallback_mode(self) -> str:
+        normalized = self.cloud_fallback.strip().lower().replace("_", "-")
+        if normalized in {"enabled", "true", "on", "auto", "automatic"}:
+            return "automatic"
+        if normalized in {"manual", "manual-only", "manual_only"}:
+            return "manual-only"
+        return "disabled"
 
     @property
     def cloud_fallback_enabled(self) -> bool:
-        return self.cloud_fallback.strip().lower() in {"enabled", "true", "on"}
+        return self.cloud_fallback_mode != "disabled"
+
+    @property
+    def automatic_cloud_fallback_enabled(self) -> bool:
+        return self.cloud_fallback_mode == "automatic"
 
 
 @dataclass(frozen=True)
@@ -152,7 +165,7 @@ def load_config(path: str | Path | None = None) -> OlivawConfig:
         cloud_fallback=str(
             _env_value(
                 "OLIVAW_CLOUD_FALLBACK",
-                policy_data.get("cloud_fallback", "disabled"),
+                policy_data.get("cloud_fallback", "manual-only"),
             )
         )
     )
@@ -251,7 +264,10 @@ def public_config(config: OlivawConfig) -> dict[str, object]:
             "model": config.cloud.model,
             "api_key_present": config.cloud.api_key_present,
         },
-        "policy": {"cloud_fallback": config.policy.cloud_fallback},
+        "policy": {
+            "cloud_fallback": config.policy.cloud_fallback,
+            "cloud_fallback_mode": config.policy.cloud_fallback_mode,
+        },
         "sources": {
             "files": {
                 "directory": str(config.files.directory),
@@ -307,6 +323,7 @@ def format_config_report(config: OlivawConfig) -> str:
             "",
             "Policy:",
             f"- Cloud fallback: {config.policy.cloud_fallback}",
+            f"- Cloud fallback mode: {config.policy.cloud_fallback_mode}",
             "",
             "Sources:",
             f"- Files directory: {config.files.directory}",

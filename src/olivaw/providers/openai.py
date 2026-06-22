@@ -80,6 +80,8 @@ class OpenAIProvider:
             text=text,
             provider=self.name,
             model=self.config.model,
+            provider_kind="cloud",
+            cloud_model_call_count=1,
         )
 
     def _create_client(self):

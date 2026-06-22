@@ -19,7 +19,8 @@ enabled = false
 model = "gpt-4.1-mini"
 
 [policy]
-cloud_fallback = "disabled"
+# Options: "disabled", "manual-only", "automatic".
+cloud_fallback = "manual-only"
 
 [sources.files]
 directory = "~/Library/Application Support/Olivaw/data"

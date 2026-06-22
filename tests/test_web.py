@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from olivaw.actions import ActionHistory
+from olivaw.assistant.attribution import AttributedResponse, MODEL_KNOWLEDGE
 from olivaw.briefing.health_review import HealthReviewResult
 from olivaw.models import HealthReport, ProviderStatus
 from olivaw.web import (
@@ -3130,6 +3131,37 @@ def test_chat_post_renders_provenance_for_source_grounded_unknown_response(monke
     assert "source that can answer that" in response.text
     assert "disk utilization" in response.text
     assert "Knowledge mode: Unknown operational state" in response.text
+
+
+def test_chat_post_renders_cloud_assist_attribution(monkeypatch):
+    def fake_run_with_attribution(self, prompt, config=None):
+        assert prompt == "Explain Stoicism. Think harder."
+        return AttributedResponse(
+            text="Cloud assisted Stoicism answer.",
+            attribution=MODEL_KNOWLEDGE,
+            capability="chat",
+            provenance_label="Cloud assist",
+            provenance_detail="Model knowledge",
+            metrics={
+                "local_model_call_count": 1,
+                "cloud_model_call_count": 1,
+                "fallback_reason": "think_harder_requested",
+            },
+        )
+
+    monkeypatch.setattr(
+        "olivaw.web.ChatCapability.run_with_attribution",
+        fake_run_with_attribution,
+    )
+
+    response = client.post(
+        "/chat",
+        data={"prompt": "Explain Stoicism. Think harder."},
+    )
+
+    assert response.status_code == 200
+    assert "Cloud assisted Stoicism answer." in response.text
+    assert "Cloud assist: Model knowledge" in response.text
 
 
 def test_settings_does_not_expose_secret(monkeypatch):

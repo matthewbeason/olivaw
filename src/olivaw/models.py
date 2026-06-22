@@ -25,6 +25,8 @@ class ProviderStatus:
 class CompletionRequest:
     prompt: str
     system_prompt: str | None = None
+    cloud_fallback_allowed: bool = False
+    cloud_fallback_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,10 @@ class CompletionResponse:
     text: str
     provider: str
     model: str | None = None
+    provider_kind: ProviderKind | None = None
+    fallback_reason: str | None = None
+    local_model_call_count: int = 0
+    cloud_model_call_count: int = 0
     request_duration_ms: int | None = None
     ollama_total_duration_ms: int | None = None
     ollama_load_duration_ms: int | None = None

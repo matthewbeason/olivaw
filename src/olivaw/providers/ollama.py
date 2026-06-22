@@ -99,6 +99,8 @@ class OllamaProvider:
             text=str(data.get("response", "")),
             provider=self.name,
             model=self.config.model,
+            provider_kind="local",
+            local_model_call_count=1,
             request_duration_ms=request_duration_ms,
             ollama_total_duration_ms=_duration_ms(data.get("total_duration")),
             ollama_load_duration_ms=_duration_ms(data.get("load_duration")),

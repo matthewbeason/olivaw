@@ -150,7 +150,7 @@ enabled = false
 model = "gpt-4.1-mini"
 
 [policy]
-cloud_fallback = "disabled"
+cloud_fallback = "manual-only"
 
 [sources.files]
 directory = "~/Library/Application Support/Olivaw/data"
@@ -200,7 +200,7 @@ Equivalent `.env` values:
 OPENAI_API_KEY=
 OLIVAW_CLOUD_ENABLED=false
 OLIVAW_CLOUD_MODEL=gpt-4.1-mini
-OLIVAW_CLOUD_FALLBACK=disabled
+OLIVAW_CLOUD_FALLBACK=manual-only
 OLIVAW_PRIME_OBSERVER_BASE_URL=http://127.0.0.1:8000
 ```
 
@@ -586,16 +586,22 @@ considered when `OLIVAW_CLOUD_ENABLED=true` or equivalent TOML configuration is
 set. The API key is read from `OPENAI_API_KEY` or `OLIVAW_OPENAI_API_KEY` and is
 never shown in public configuration output.
 
-Cloud fallback remains disabled unless explicitly enabled with:
+Cloud fallback is a policy setting, not a default routing path. The recommended
+local-first mode is manual-only:
 
 ```bash
-OLIVAW_CLOUD_FALLBACK=enabled
+OLIVAW_CLOUD_FALLBACK=manual-only
 ```
 
-Local routing remains preferred. If Ollama is available, `olivaw chat` uses the
-local provider even when OpenAI is configured. If Ollama is unavailable, OpenAI
-can be used only when the cloud provider is enabled, an API key is present, and
-cloud fallback is explicitly enabled.
+Supported values are `disabled`, `manual-only`, and `automatic`. Source-backed
+answers, derived source answers, and unknown operational state answers never use
+cloud. Model-knowledge prompts use the local provider first. In `manual-only`
+mode, cloud can assist only when the user explicitly asks for deeper analysis,
+the best available model, cloud assistance, higher confidence, or similar
+escalation, and the local model fails or returns unusable output. In
+`automatic` mode, the same fallback can occur for model-knowledge prompts without
+explicit escalation when the local provider is unavailable or fails. Cloud use is
+still bounded by `OLIVAW_CLOUD_ENABLED=true` and a configured OpenAI API key.
 
 ## Briefing Capability
 
