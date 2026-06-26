@@ -423,7 +423,7 @@ def test_get_health_review_refresh_redirects_to_briefing():
 
 
 def test_templates_do_not_hot_reload_in_long_running_web_process_by_default():
-    assert app.version == "0.7.0"
+    assert app.version == "0.8.0"
     from olivaw.web import templates
 
     assert templates.env.auto_reload is False

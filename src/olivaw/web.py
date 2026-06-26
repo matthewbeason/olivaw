@@ -68,7 +68,7 @@ def _template_response(
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 _configure_template_environment()
-app = FastAPI(title="Olivaw", version="0.7.0")
+app = FastAPI(title="Olivaw", version="0.8.0")
 HEALTH_REVIEW_CACHE_TTL = timedelta(minutes=15)
 ASSISTANT_SESSION_TTL = timedelta(hours=12)
 ASSISTANT_SESSION_COOKIE = "olivaw_session"

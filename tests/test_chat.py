@@ -200,6 +200,40 @@ def test_explicit_best_model_intent_marks_model_request_cloud_eligible(monkeypat
     assert result.metrics["cloud_model_call_count"] == 0
 
 
+def test_local_model_response_does_not_claim_cloud_use_when_only_eligible(monkeypatch):
+    class LocalRouter:
+        def __init__(self, config):
+            self.config = config
+
+        def complete(self, request: CompletionRequest):
+            assert request.cloud_fallback_allowed is True
+            return CompletionResponse(
+                text=(
+                    "I'll use OpenAI's cloud provider for this response. "
+                    "A local-first architecture keeps data local first."
+                ),
+                provider="ollama",
+                model="local-test",
+                provider_kind="local",
+                local_model_call_count=1,
+                cloud_model_call_count=0,
+            )
+
+    monkeypatch.setattr("olivaw.capabilities.chat.RouterProvider", LocalRouter)
+
+    result = ChatCapability().run_with_attribution(
+        "Use the best model available and explain local-first architecture.",
+        config=OlivawConfig(policy=PolicyConfig(cloud_fallback="manual-only")),
+    )
+
+    assert result.provenance_label == "Knowledge mode"
+    assert result.metrics["cloud_fallback_eligible"] is True
+    assert result.metrics["cloud_model_call_count"] == 0
+    assert "OpenAI" not in result.text
+    assert "cloud provider" not in result.text.lower()
+    assert "local-first architecture keeps data local first" in result.text
+
+
 def test_think_harder_cloud_fallback_renders_cloud_assist_attribution(monkeypatch):
     class CloudRouter:
         def __init__(self, config):
@@ -231,6 +265,7 @@ def test_think_harder_cloud_fallback_renders_cloud_assist_attribution(monkeypatc
     assert result.text == "cloud assisted answer"
     assert result.provenance_label == "Cloud assist"
     assert result.provenance_detail == "Model knowledge"
+    assert result.text == "cloud assisted answer"
     assert result.metrics["response_provider"] == "openai"
     assert result.metrics["response_provider_kind"] == "cloud"
     assert result.metrics["fallback_reason"] == "think_harder_requested"

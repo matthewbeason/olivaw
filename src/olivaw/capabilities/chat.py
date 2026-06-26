@@ -118,6 +118,7 @@ class ChatCapability:
                 text=_sanitize_model_knowledge_response(
                     response.text,
                     protected_terms=_registered_provenance_terms(resolved_config),
+                    allow_cloud_claims=used_cloud,
                 ),
                 attribution=MODEL_KNOWLEDGE,
                 capability="chat",
@@ -618,6 +619,7 @@ def _sanitize_model_knowledge_response(
     text: str,
     *,
     protected_terms: tuple[str, ...] = (),
+    allow_cloud_claims: bool = False,
 ) -> str:
     stripped = text.strip()
     if not stripped:
@@ -646,6 +648,8 @@ def _sanitize_model_knowledge_response(
         sanitized,
     )
     sanitized = _remove_generic_provenance_claims(sanitized)
+    if not allow_cloud_claims:
+        sanitized = _remove_cloud_provider_claims(sanitized)
     sanitized = re.sub(
         r"\b(?:source-backed|source backed|sourced-backed|sourced backed)\b\s*",
         "",
@@ -665,6 +669,19 @@ def _sanitize_model_knowledge_response(
     sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
     sanitized = re.sub(r" {2,}", " ", sanitized)
     return sanitized.strip()
+
+
+def _remove_cloud_provider_claims(text: str) -> str:
+    return re.sub(
+        r"(?ims)(?:^|(?<=[.!?])\s*)"
+        r"(?=[^.!?\n]*\b(?:openai|cloud provider|cloud model|cloud assistance|"
+        r"cloud assist|cloud fallback)\b)"
+        r"(?=[^.!?\n]*\b(?:use|using|used|enabled|provider|model|response|"
+        r"fallback|assist|assistance)\b)"
+        r"[^.!?\n]*[.!?]?\s*",
+        "",
+        text,
+    )
 
 
 def _remove_generic_provenance_claims(text: str) -> str:

@@ -13,9 +13,11 @@ def test_prompt_builder_includes_current_capabilities():
     assert "read-only configuration display" in prompt
     assert "source inspection" in prompt
     assert "file inspection" in prompt
+    assert "source aggregation" in prompt
     assert "source-backed briefing generation" in prompt
     assert "PrimeObserverSource" in prompt
     assert "CoreSignalSource" in prompt
+    assert "WeatherSource" in prompt
 
 
 def test_prompt_builder_warns_against_claiming_unimplemented_capabilities():
@@ -23,8 +25,8 @@ def test_prompt_builder_warns_against_claiming_unimplemented_capabilities():
 
     assert "Not implemented yet:" in prompt
     assert "calendar integration" in prompt
-    assert "weather lookup" in prompt
-    assert "Source aggregation" in prompt
+    assert "email integration" in prompt
+    assert "desktop automation" in prompt
     assert "Do not claim unavailable capabilities." in prompt
     assert (
         "Default to 2 to 4 short sentences unless the operator asks for detail."
